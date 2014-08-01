@@ -247,6 +247,33 @@ GIOChannel *dcc_listen(GIOChannel *iface, IPADDR *ip, int *port)
         return NULL;
 }
 
+/* Connect to specified IP address using the correct own_ip using SSL. */
+GIOChannel *dcc_connect_ip_ssl(IPADDR *ip, int port, SERVER_REC *server)
+{
+	IPADDR *own_ip, temp_ip;
+	const char *own_ip_str;
+	GIOChannel *handle;
+
+	own_ip_str = settings_get_str("dcc_own_ip");
+	own_ip = NULL;
+	if (*own_ip_str != '\0') {
+                /* use the specified interface for connecting */
+		net_host2ip(own_ip_str, &temp_ip);
+		if (IPADDR_IS_V6(ip) == IPADDR_IS_V6(&temp_ip))
+			own_ip = &temp_ip;
+	}
+
+	if (own_ip == NULL)
+		own_ip = IPADDR_IS_V6(ip) ? source_host_ip6 : source_host_ip4;
+
+	handle = net_connect_ip_ssl(ip, port, own_ip, server);
+	if (handle == NULL && errno == EADDRNOTAVAIL && own_ip != NULL) {
+		/* dcc_own_ip is external address */
+		own_ip = IPADDR_IS_V6(ip) ? source_host_ip6 : source_host_ip4;
+		handle = net_connect_ip_ssl(ip, port, own_ip, server);
+	}
+	return handle;
+}
 /* Connect to specified IP address using the correct own_ip. */
 GIOChannel *dcc_connect_ip(IPADDR *ip, int port)
 {

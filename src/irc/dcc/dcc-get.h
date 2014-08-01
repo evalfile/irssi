@@ -25,6 +25,7 @@ typedef struct {
 
 	unsigned int file_quoted:1; /* file name was received quoted ("file name") */
 	unsigned int from_dccserver:1; /* get is using dccserver method */
+	unsigned int secure:1;
 } GET_DCC_REC;
 
 #define DCC_GET_TYPE module_get_uniq_id_str("DCC", "GET")
