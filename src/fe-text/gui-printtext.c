@@ -120,6 +120,7 @@ void gui_printtext_after_time(TEXT_DEST_REC *dest, LINE_REC *prev, const char *s
 	gui->insert_after_time = time;
 	format_send_to_gui(dest, str);
 	gui->use_insert_after = FALSE;
+	signal_emit("gui print text after finished", 3, dest->window, gui->insert_after, prev);
 }
 
 void gui_printtext_after(TEXT_DEST_REC *dest, LINE_REC *prev, const char *str)
@@ -158,8 +159,11 @@ static void get_colors(int flags, int *fg, int *bg, int *attr)
                 if (*bg >= 0) {
 			*bg = mirc_colors[*bg % 100];
 			flags &= ~GUI_PRINT_FLAG_COLOR_24_BG;
-			if (settings_get_bool("mirc_blink_fix"))
-				*bg = term_color256map[*bg&0xff] & ~0x08;
+			if (settings_get_bool("mirc_blink_fix")) {
+				if (*bg < 16) /* ansi bit flip :-( */
+					*bg = (*bg&8) | (*bg&4)>>2 | (*bg&2) | (*bg&1)<<2;
+				*bg = term_color256map[*bg&0xff] & 7;
+			}
 		}
 		if (*fg >= 0) {
 			*fg = mirc_colors[*fg % 100];
