@@ -85,6 +85,7 @@ static char **split_line(const SERVER_REC *server, const char *line,
 {
 	const char *start = settings_get_str("split_line_start");
 	const char *end = settings_get_str("split_line_end");
+	gboolean onspace = settings_get_bool("split_line_on_space");
 	char *recoded_start = recode_out(server, start, target);
 	char *recoded_end = recode_out(server, end, target);
 	char **lines;
@@ -103,7 +104,7 @@ static char **split_line(const SERVER_REC *server, const char *line,
 		return NULL;
 	}
 
-	lines = recode_split(server, line, target, len);
+	lines = recode_split(server, line, target, len, onspace);
 	for (i = 0; lines[i] != NULL; i++) {
 		if (i != 0 && *start != '\0') {
 			/* Not the first line. */
@@ -178,23 +179,15 @@ static char **split_message(SERVER_REC *server, const char *target,
 			    const char *msg)
 {
 	IRC_SERVER_REC *ircserver = IRC_SERVER(server);
-	int userhostlen = MAX_USERHOST_LEN;
 
 	g_return_val_if_fail(ircserver != NULL, NULL);
 	g_return_val_if_fail(target != NULL, NULL);
 	g_return_val_if_fail(msg != NULL, NULL);
 
-	/*
-	 * If we have joined a channel, userhost will be set, so we can
-	 * calculate the exact maximum length.
-	 */
-	if (ircserver->userhost != NULL)
-		userhostlen = strlen(ircserver->userhost);
-
-	/* length calculation shamelessly stolen from splitlong.pl */
+	/* length calculation shamelessly stolen from splitlong_safe.pl */
 	return split_line(SERVER(server), msg, target,
 			  510 - strlen(":! PRIVMSG  :") -
-			  strlen(ircserver->nick) - userhostlen -
+			  strlen(ircserver->nick) - MAX_USERHOST_LEN -
 			  strlen(target));
 }
 
@@ -458,18 +451,14 @@ void irc_server_send_action(IRC_SERVER_REC *server, const char *target, const ch
 char **irc_server_split_action(IRC_SERVER_REC *server, const char *target,
 			       const char *data)
 {
-	int userhostlen = MAX_USERHOST_LEN;
-
 	g_return_val_if_fail(server != NULL, NULL);
 	g_return_val_if_fail(target != NULL, NULL);
 	g_return_val_if_fail(data != NULL, NULL);
 
-	if (server->userhost != NULL)
-		userhostlen = strlen(server->userhost);
-
 	return split_line(SERVER(server), data, target,
 			  510 - strlen(":! PRIVMSG  :\001ACTION \001") -
-			  strlen(server->nick) - userhostlen - strlen(target));
+			  strlen(server->nick) - MAX_USERHOST_LEN -
+			  strlen(target));
 }
 
 void irc_server_send_away(IRC_SERVER_REC *server, const char *reason)
@@ -484,9 +473,11 @@ void irc_server_send_away(IRC_SERVER_REC *server, const char *reason)
                 if (*reason != '\0') {
 			server->away_reason = g_strdup(reason);
 			reason = recoded = recode_out(SERVER(server), reason, NULL);
+			irc_send_cmdv(server, "AWAY :%s", reason);
+		} else {
+			irc_send_cmdv(server, "AWAY");
 		}
 
-		irc_send_cmdv(server, "AWAY :%s", reason);
 	}
 	g_free(recoded);
 }
@@ -753,7 +744,7 @@ static void event_isupport(IRC_SERVER_REC *server, const char *data)
 	char **item, *sptr, *eptr;
 	char **isupport;
 	gpointer key, value;
-   
+
 	g_return_if_fail(server != NULL);
 
 	server->isupport_sent = TRUE;
@@ -982,6 +973,7 @@ void irc_servers_init(void)
 	settings_add_str("misc", "usermode", DEFAULT_USER_MODE);
 	settings_add_str("misc", "split_line_start", "");
 	settings_add_str("misc", "split_line_end", "");
+	settings_add_bool("misc", "split_line_on_space", TRUE);
 	settings_add_time("flood", "cmd_queue_speed", DEFAULT_CMD_QUEUE_SPEED);
 	settings_add_int("flood", "cmds_max_at_once", DEFAULT_CMDS_MAX_AT_ONCE);
 

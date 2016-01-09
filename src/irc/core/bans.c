@@ -88,7 +88,7 @@ char *ban_get_masks(IRC_CHANNEL_REC *channel, const char *nicks, int ban_type)
 	str = g_string_new(NULL);
 	banlist = g_strsplit(nicks, " ", -1);
 	for (ban = banlist; *ban != NULL; ban++) {
-		if (strchr(*ban, '!') != NULL) {
+		if (**ban == '$' || strchr(*ban, '!') != NULL) {
 			/* explicit ban */
 			g_string_append_printf(str, "%s ", *ban);
 			continue;
@@ -309,7 +309,7 @@ static void cmd_unban(const char *data, IRC_SERVER_REC *server, void *item)
 		ban = g_strdup(BAN_LAST);
 
 	command_set_ban(ban ? ban : data, server, item, FALSE, 0);
-	
+
 	g_free(ban);
 
 	cmd_params_free(free_arg);
