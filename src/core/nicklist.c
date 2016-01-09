@@ -478,7 +478,7 @@ static NICK_REC *nick_nfind(CHANNEL_REC *channel, const char *nick, int len)
 	if (rec != NULL) {
 		/* if there's multiple, get the one with identical case */
 		while (rec->next != NULL) {
-			if (strcmp(rec->nick, tmpnick) == 0)
+			if (g_strcmp0(rec->nick, tmpnick) == 0)
 				break;
                         rec = rec->next;
 		}
@@ -569,6 +569,14 @@ int nick_match_msg(CHANNEL_REC *channel, const char *msg, const char *nick)
 	} else {
 		return TRUE;
 	}
+}
+
+int nick_match_msg_everywhere(CHANNEL_REC *channel, const char *msg, const char *nick)
+{
+	g_return_val_if_fail(nick != NULL, FALSE);
+	g_return_val_if_fail(msg != NULL, FALSE);
+
+	return stristr_full(msg, nick) != NULL;
 }
 
 void nicklist_init(void)

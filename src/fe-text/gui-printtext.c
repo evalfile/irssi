@@ -109,6 +109,16 @@ void gui_printtext(int xpos, int ypos, const char *str)
 	next_xpos = next_ypos = -1;
 }
 
+void gui_printtext_internal(int xpos, int ypos, const char *str)
+{
+	next_xpos = xpos;
+	next_ypos = ypos;
+
+	printtext_gui_internal(str);
+
+	next_xpos = next_ypos = -1;
+}
+
 void gui_printtext_after_time(TEXT_DEST_REC *dest, LINE_REC *prev, const char *str, time_t time)
 {
 	GUI_WINDOW_REC *gui;
@@ -220,16 +230,15 @@ static void sig_gui_print_text(WINDOW_REC *window, void *fgcolor,
 	get_colors(flags, &fg, &bg, &attr);
 
 	if (window == NULL) {
-                g_return_if_fail(next_xpos != -1);
+		g_return_if_fail(next_xpos != -1);
 
 		term_set_color2(root_window, attr, fg, bg);
 
 		term_move(root_window, next_xpos, next_ypos);
 		if (flags & GUI_PRINT_FLAG_CLRTOEOL)
 			term_clrtoeol(root_window);
-		term_addstr(root_window, str);
-		next_xpos += strlen(str); /* FIXME utf8 or big5 */
-                return;
+		next_xpos += term_addstr(root_window, str);
+		return;
 	}
 
 	lineinfo.level = dest == NULL ? 0 : dest->level;

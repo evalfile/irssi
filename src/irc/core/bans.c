@@ -184,11 +184,11 @@ static void command_set_ban(const char *data, IRC_SERVER_REC *server,
 	if (server == NULL || !server->connected || !IS_IRC_SERVER(server))
 		cmd_return_error(CMDERR_NOT_CONNECTED);
 
-	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_OPTCHAN | PARAM_FLAG_GETREST,
-			    item, &channel, &nicks)) return;
-	if (!ischannel(*channel)) cmd_param_error(CMDERR_NOT_JOINED);
+	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_OPTCHAN | PARAM_FLAG_GETREST |
+			    PARAM_FLAG_STRIP_TRAILING_WS, item, &channel, &nicks)) return;
+	if (!server_ischannel(SERVER(server), channel)) cmd_param_error(CMDERR_NOT_JOINED);
 	if (*nicks == '\0') {
-		if (strcmp(data, "*") != 0)
+		if (g_strcmp0(data, "*") != 0)
 			cmd_param_error(CMDERR_NOT_ENOUGH_PARAMS);
                 /* /BAN * or /UNBAN * - ban/unban everyone */
 		nicks = (char *) data;
@@ -262,8 +262,8 @@ static void cmd_ban(const char *data, IRC_SERVER_REC *server, void *item)
 
         CMD_IRC_SERVER(server);
 
-	if (!cmd_get_params(data, &free_arg, 1 |
-			    PARAM_FLAG_OPTIONS | PARAM_FLAG_GETREST,
+	if (!cmd_get_params(data, &free_arg, 1 | PARAM_FLAG_OPTIONS | 
+			    PARAM_FLAG_GETREST | PARAM_FLAG_STRIP_TRAILING_WS,
 			    "ban", &optlist, &ban))
 		return;
 
@@ -297,8 +297,8 @@ static void cmd_unban(const char *data, IRC_SERVER_REC *server, void *item)
 
         CMD_IRC_SERVER(server);
 
-	if (!cmd_get_params(data, &free_arg, 1 |
-			    PARAM_FLAG_OPTIONS | PARAM_FLAG_GETREST,
+	if (!cmd_get_params(data, &free_arg, 1 | PARAM_FLAG_OPTIONS | 
+			    PARAM_FLAG_GETREST | PARAM_FLAG_STRIP_TRAILING_WS,
 			    "unban", &optlist, &ban))
 		return;
 
@@ -318,7 +318,7 @@ static void cmd_unban(const char *data, IRC_SERVER_REC *server, void *item)
 static void read_settings(void)
 {
 	if (default_ban_type_str != NULL &&
-	    strcmp(default_ban_type_str, settings_get_str("ban_type")) == 0)
+	    g_strcmp0(default_ban_type_str, settings_get_str("ban_type")) == 0)
 		return;
 
 	g_free_not_null(default_ban_type_str);

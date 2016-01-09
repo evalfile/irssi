@@ -83,7 +83,6 @@ static void sig_reload_config(int signo)
 
 static void read_settings(void)
 {
-#ifndef WIN32
 	static int signals[] = {
 		SIGINT, SIGQUIT, SIGTERM,
 		SIGALRM, SIGUSR1, SIGUSR2
@@ -124,7 +123,6 @@ static void read_settings(void)
                         settings_set_bool("override_coredump_limit", FALSE);
 	}
 #endif
-#endif
 }
 
 static void sig_gui_dialog(const char *type, const char *text)
@@ -156,11 +154,17 @@ static void sig_init_finished(void)
 static char *fix_path(const char *str)
 {
 	char *new_str = convert_home(str);
+
 	if (!g_path_is_absolute(new_str)) {
 		char *tmp_str = new_str;
-		new_str = g_strdup_printf("%s/%s", g_get_current_dir(), tmp_str);
+		char *current_dir = g_get_current_dir();
+
+		new_str = g_build_path(G_DIR_SEPARATOR_S, current_dir, tmp_str, NULL);
+
+		g_free(current_dir);
 		g_free(tmp_str);
 	}
+
 	return new_str;
 }
 
@@ -219,9 +223,7 @@ void core_init(void)
 	client_start_time = time(NULL);
 
 	modules_init();
-#ifndef WIN32
 	pidwait_init();
-#endif
 
 	net_disconnect_init();
 	signals_init();
@@ -297,9 +299,7 @@ void core_deinit(void)
 	signals_deinit();
 	net_disconnect_deinit();
 
-#ifndef WIN32
 	pidwait_deinit();
-#endif
 	modules_deinit();
 
 	g_free(irssi_dir);

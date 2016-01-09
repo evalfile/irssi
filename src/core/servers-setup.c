@@ -179,6 +179,8 @@ static void server_setup_fill_server(SERVER_CONNECT_REC *conn,
 		conn->ssl_cafile = g_strdup(sserver->ssl_cafile);
 	if (conn->ssl_capath == NULL && sserver->ssl_capath != NULL && sserver->ssl_capath[0] != '\0')
 		conn->ssl_capath = g_strdup(sserver->ssl_capath);
+	if (conn->ssl_ciphers == NULL && sserver->ssl_ciphers != NULL && sserver->ssl_ciphers[0] != '\0')
+		conn->ssl_ciphers = g_strdup(sserver->ssl_ciphers);
 
 	server_setup_fill_reconn(conn, sserver);
 
@@ -405,6 +407,7 @@ static SERVER_SETUP_REC *server_setup_read(CONFIG_NODE *node)
 	rec->ssl_verify = config_node_get_bool(node, "ssl_verify", FALSE);
 	rec->ssl_cafile = g_strdup(config_node_get_str(node, "ssl_cafile", NULL));
 	rec->ssl_capath = g_strdup(config_node_get_str(node, "ssl_capath", NULL));
+	rec->ssl_ciphers = g_strdup(config_node_get_str(node, "ssl_ciphers", NULL));
 	if (rec->ssl_cafile || rec->ssl_capath)
 		rec->ssl_verify = TRUE;
 	if (rec->ssl_cert != NULL || rec->ssl_verify)
@@ -420,17 +423,39 @@ static SERVER_SETUP_REC *server_setup_read(CONFIG_NODE *node)
 	return rec;
 }
 
+static int compare_server_setup (CONFIG_NODE *node, SERVER_SETUP_REC *server)
+{
+	char *address, *chatnet;
+	int port;
+
+	address = config_node_get_str(node, "address", NULL);
+	chatnet = config_node_get_str(node, "chatnet", NULL);
+	port = config_node_get_int(node, "port", 0);
+
+	if (g_strcmp0(address, server->address) != 0 ||
+	    g_strcmp0(chatnet, server->chatnet) != 0 ||
+	    port != server->port)
+		return 1;
+
+	return 0;
+}
+
 static void server_setup_save(SERVER_SETUP_REC *rec)
 {
-	CONFIG_NODE *parentnode, *node;
-	int index;
+	CONFIG_NODE *parent_node, *node;
+	GSList *config_node;
 
-	index = g_slist_index(setupservers, rec);
+	parent_node = iconfig_node_traverse("(servers", TRUE);
 
-	parentnode = iconfig_node_traverse("(servers", TRUE);
-	node = config_node_nth(parentnode, index);
-	if (node == NULL)
-		node = config_node_section(parentnode, NULL, NODE_TYPE_BLOCK);
+	/* Try to find this channel in the configuration */
+	config_node = g_slist_find_custom(parent_node->value, rec,
+					  (GCompareFunc)compare_server_setup);
+	if (config_node != NULL)
+		/* Let's update this server record */
+		node = config_node->data;
+	else
+		/* Create a brand-new server record */
+		node = iconfig_node_section(parent_node, NULL, NODE_TYPE_BLOCK);
 
         iconfig_node_clear(node);
 	iconfig_node_set_str(node, "address", rec->address);
@@ -445,6 +470,7 @@ static void server_setup_save(SERVER_SETUP_REC *rec)
 	iconfig_node_set_bool(node, "ssl_verify", rec->ssl_verify);
 	iconfig_node_set_str(node, "ssl_cafile", rec->ssl_cafile);
 	iconfig_node_set_str(node, "ssl_capath", rec->ssl_capath);
+	iconfig_node_set_str(node, "ssl_ciphers", rec->ssl_ciphers);
 	iconfig_node_set_str(node, "own_host", rec->own_host);
 
 	iconfig_node_set_str(node, "family",
@@ -461,14 +487,21 @@ static void server_setup_save(SERVER_SETUP_REC *rec)
 
 static void server_setup_remove_config(SERVER_SETUP_REC *rec)
 {
-	CONFIG_NODE *node;
-	int index;
+	CONFIG_NODE *parent_node;
+	GSList *config_node;
 
-	node = iconfig_node_traverse("servers", FALSE);
-	if (node != NULL) {
-		index = g_slist_index(setupservers, rec);
-		iconfig_node_list_remove(node, index);
-	}
+	parent_node = iconfig_node_traverse("servers", FALSE);
+
+	if (parent_node == NULL)
+		return;
+
+	/* Try to find this server in the configuration */
+	config_node = g_slist_find_custom(parent_node->value, rec,
+					  (GCompareFunc)compare_server_setup);
+
+	if (config_node != NULL)
+		/* Delete the server from the configuration */
+		iconfig_node_remove(parent_node, config_node->data);
 }
 
 static void server_setup_destroy(SERVER_SETUP_REC *rec)
@@ -486,6 +519,7 @@ static void server_setup_destroy(SERVER_SETUP_REC *rec)
 	g_free_not_null(rec->ssl_pass);
 	g_free_not_null(rec->ssl_cafile);
 	g_free_not_null(rec->ssl_capath);
+	g_free_not_null(rec->ssl_ciphers);
 	g_free(rec->address);
 	g_free(rec);
 }
@@ -498,6 +532,21 @@ void server_setup_add(SERVER_SETUP_REC *rec)
 	server_setup_save(rec);
 
 	signal_emit("server setup updated", 1, rec);
+}
+
+void server_setup_remove_chatnet(const char *chatnet)
+{
+	GSList *tmp, *next;
+
+	g_return_if_fail(chatnet != NULL);
+
+	for (tmp = setupservers; tmp != NULL; tmp = next) {
+		SERVER_SETUP_REC *rec = tmp->data;
+
+		next = tmp->next;
+		if (g_ascii_strcasecmp(rec->chatnet, chatnet) == 0)
+			server_setup_remove(rec);
+	}
 }
 
 void server_setup_remove(SERVER_SETUP_REC *rec)
@@ -526,7 +575,7 @@ static void read_servers(void)
 static void read_settings(void)
 {
 	if (old_source_host == NULL ||
-	    strcmp(old_source_host, settings_get_str("hostname")) != 0) {
+	    g_strcmp0(old_source_host, settings_get_str("hostname")) != 0) {
                 g_free_not_null(old_source_host);
 		old_source_host = g_strdup(settings_get_str("hostname"));
 

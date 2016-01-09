@@ -8,11 +8,15 @@ char *address;
 int port;
 char *password;
 
+int sasl_mechanism;
+char *sasl_password;
+
 char *ssl_cert;
 char *ssl_pkey;
 char *ssl_pass;
 char *ssl_cafile;
 char *ssl_capath;
+char *ssl_ciphers;
 
 char *own_host; /* address to use when connecting this server */
 IPADDR *own_ip4, *own_ip6; /* resolved own_address if not NULL */

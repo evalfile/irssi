@@ -342,6 +342,8 @@ void sig_dccget_connected(GET_DCC_REC *dcc)
 		else
 			ret = fchmod(temphandle, dcc_file_create_mode);
 
+		close(temphandle);
+
 		if (ret != -1) {
 			ret = link(tempfname, dcc->file);
 
@@ -365,7 +367,6 @@ void sig_dccget_connected(GET_DCC_REC *dcc)
 
 		/* close/remove the temp file */
 		ret_errno = errno;
-		close(temphandle);
 		unlink(tempfname);
 		g_free(tempfname);
 
@@ -791,7 +792,7 @@ void cmd_dcc_receive(const char *data, DCC_GET_FUNC accept_func,
 		next = tmp->next;
 		if (IS_DCC_GET(dcc) && g_ascii_strcasecmp(dcc->nick, nick) == 0 &&
 		    (dcc_is_waiting_user(dcc) || dcc->from_dccserver) &&
-		    (*fname == '\0' || strcmp(dcc->arg, fname) == 0)) {
+		    (*fname == '\0' || g_strcmp0(dcc->arg, fname) == 0)) {
 			found = TRUE;
 			if (!dcc_is_passive(dcc))
 				accept_func(dcc);

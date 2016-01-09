@@ -674,7 +674,7 @@ get_optional_channel(WI_ITEM_REC *active_item, char **data, int require_name)
 	origtmp = tmp = g_strdup(*data);
 	channel = cmd_get_param(&tmp);
 
-	if (strcmp(channel, "*") == 0 && !require_name) {
+	if (g_strcmp0(channel, "*") == 0 && !require_name) {
                 /* "*" means active channel */
 		cmd_get_param(data);
 		ret = window_item_get_target(active_item);
@@ -748,6 +748,11 @@ int cmd_get_params(const char *data, gpointer *free_me, int count, ...)
 			if (cnt == 0 && count & PARAM_FLAG_GETREST) {
 				/* get rest */
 				arg = datad;
+
+				/* strip the trailing whitespace */
+				if (count & PARAM_FLAG_STRIP_TRAILING_WS) {
+					arg = g_strchomp(arg);
+				}
 			} else {
 				arg = (count & PARAM_FLAG_NOQUOTES) ?
 					cmd_get_param(&datad) :

@@ -83,7 +83,7 @@ void term_set_color(TERM_WINDOW *window, int col);
 void term_move(TERM_WINDOW *window, int x, int y);
 void term_addch(TERM_WINDOW *window, char chr);
 void term_add_unichar(TERM_WINDOW *window, unichar chr);
-void term_addstr(TERM_WINDOW *window, const char *str);
+int  term_addstr(TERM_WINDOW *window, const char *str);
 void term_clrtoeol(TERM_WINDOW *window);
 
 void term_move_cursor(int x, int y);
@@ -93,6 +93,8 @@ void term_refresh_thaw(void);
 void term_refresh(TERM_WINDOW *window);
 
 void term_stop(void);
+
+void term_set_bracketed_paste_mode(int enable);
 
 /* keyboard input handling */
 void term_set_input_type(int type);

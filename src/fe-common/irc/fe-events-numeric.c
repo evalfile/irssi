@@ -400,7 +400,7 @@ static void event_target_unavailable(IRC_SERVER_REC *server, const char *data,
 	g_return_if_fail(data != NULL);
 
 	params = event_get_params(data, 2, NULL, &target);
-	if (!ischannel(*target)) {
+	if (!server_ischannel(SERVER(server), target)) {
 		/* nick unavailable */
 		printformat(server, NULL, MSGLEVEL_CRAP,
 			    IRCTXT_NICK_UNAVAILABLE, target);
@@ -427,7 +427,7 @@ static void event_no_such_nick(IRC_SERVER_REC *server, const char *data,
 	g_return_if_fail(data != NULL);
 
 	params = event_get_params(data, 2, NULL, &unick);
-	if (!strcmp(unick, "*"))
+	if (!g_strcmp0(unick, "*"))
 		/* more information will be in the description,
 		 * e.g. * :Target left IRC. Failed to deliver: [hi] */
 		print_event_received(server, data, nick, FALSE);
@@ -583,7 +583,7 @@ static void print_event_received(IRC_SERVER_REC *server, const char *data,
 		return;
 	ptr++;
 
-	if (ischannel(*data)) /* directed at channel */
+	if (server_ischannel(SERVER(server), data)) /* directed at channel */
 		target = g_strndup(data, (int)(ptr - data - 1));
 	else if (!target_param || *ptr == ':' || (ptr2 = strchr(ptr, ' ')) == NULL)
 		target = NULL;
@@ -605,7 +605,7 @@ static void print_event_received(IRC_SERVER_REC *server, const char *data,
 
 	recoded = recode_in(SERVER(server), args, NULL);
 	format = nick == NULL || server->real_address == NULL ||
-		strcmp(nick, server->real_address) == 0 ?
+		g_strcmp0(nick, server->real_address) == 0 ?
 		IRCTXT_DEFAULT_EVENT : IRCTXT_DEFAULT_EVENT_SERVER;
 	printformat(server, target, MSGLEVEL_CRAP, format,
 		    nick, recoded, current_server_event);

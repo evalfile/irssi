@@ -37,6 +37,8 @@ GSList *proxy_clients;
 static GString *next_line;
 static int ignore_next;
 
+static int enabled = FALSE;
+
 static void remove_client(CLIENT_REC *rec)
 {
 	g_return_if_fail(rec != NULL);
@@ -45,8 +47,8 @@ static void remove_client(CLIENT_REC *rec)
 	rec->listen->clients = g_slist_remove(rec->listen->clients, rec);
 
 	signal_emit("proxy client disconnected", 1, rec);
-	printtext(NULL, NULL, MSGLEVEL_CLIENTNOTICE,
-		  "Proxy: Client disconnected from %s", rec->host);
+	printtext(rec->server, NULL, MSGLEVEL_CLIENTNOTICE,
+		  "Proxy: Client %s:%d disconnected", rec->host, rec->port);
 
 	g_free(rec->proxy_address);
 	net_sendbuffer_destroy(rec->handle, TRUE);
@@ -82,7 +84,7 @@ static void grab_who(CLIENT_REC *client, const char *channel)
 	arg = g_string_new(channel);
 
 	for (tmp = list, count = 0; *tmp != NULL; tmp++, count++) {
-		if (strcmp(*tmp, "0") == 0) {
+		if (g_strcmp0(*tmp, "0") == 0) {
 			/* /who 0 displays everyone */
 			**tmp = '*';
 		}
@@ -106,18 +108,18 @@ static void handle_client_connect_cmd(CLIENT_REC *client,
 
 	password = settings_get_str("irssiproxy_password");
 
-	if (password != NULL && strcmp(cmd, "PASS") == 0) {
-		if (strcmp(password, args) == 0)
+	if (password != NULL && g_strcmp0(cmd, "PASS") == 0) {
+		if (g_strcmp0(password, args) == 0)
 			client->pass_sent = TRUE;
 		else {
 			/* wrong password! */
 			remove_client(client);
                         return;
 		}
-	} else if (strcmp(cmd, "NICK") == 0) {
+	} else if (g_strcmp0(cmd, "NICK") == 0) {
 		g_free_not_null(client->nick);
 		client->nick = g_strdup(args);
-	} else if (strcmp(cmd, "USER") == 0) {
+	} else if (g_strcmp0(cmd, "USER") == 0) {
 		client->user_sent = TRUE;
 	}
 
@@ -126,6 +128,10 @@ static void handle_client_connect_cmd(CLIENT_REC *client,
 			/* client didn't send us PASS, kill it */
 			remove_client(client);
 		} else {
+			signal_emit("proxy client connected", 1, client);
+			printtext(client->server, NULL, MSGLEVEL_CLIENTNOTICE,
+				  "Proxy: Client %s:%d connected",
+				  client->host, client->port);
 			client->connected = TRUE;
 			proxy_dump_data(client);
 		}
@@ -141,12 +147,12 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 		return;
 	}
 
-	if (strcmp(cmd, "QUIT") == 0) {
+	if (g_strcmp0(cmd, "QUIT") == 0) {
 		remove_client(client);
 		return;
 	}
 
-	if (strcmp(cmd, "PING") == 0) {
+	if (g_strcmp0(cmd, "PING") == 0) {
 		/* Reply to PING, if the target parameter is either
 		   proxy_adress, our own nick or empty. */
 		char *params, *origin, *target;
@@ -155,7 +161,7 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 		if (*target == '\0' ||
 		    g_ascii_strcasecmp(target, client->proxy_address) == 0 ||
 		    g_ascii_strcasecmp(target, client->nick) == 0) {
-			proxy_outdata(client, ":%s PONG %s :%s\n",
+			proxy_outdata(client, ":%s PONG %s :%s\r\n",
 				      client->proxy_address,
                                       client->proxy_address, origin);
 			g_free(params);
@@ -164,7 +170,7 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 		g_free(params);
 	}
 
-	if (strcmp(cmd, "PROXY") == 0) {
+	if (g_strcmp0(cmd, "PROXY") == 0) {
 		if (g_ascii_strcasecmp(args, "CTCP ON") == 0) {
                         /* client wants all ctcps */
 			client->want_ctcp = 1;
@@ -174,18 +180,18 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 					/* kludgy way to check if the clients aren't the same */
 					(client->recv_tag != rec->recv_tag)) {
 						if (rec->want_ctcp == 1)
-							proxy_outdata(rec, ":%s NOTICE %s :Another client is now receiving CTCPs sent to %s\n",
+							proxy_outdata(rec, ":%s NOTICE %s :Another client is now receiving CTCPs sent to %s\r\n",
 			                                      rec->proxy_address, rec->nick, rec->listen->ircnet);
 						rec->want_ctcp = 0;
 		                }
 
 			}
-			proxy_outdata(client, ":%s NOTICE %s :You're now receiving CTCPs sent to %s\n",
+			proxy_outdata(client, ":%s NOTICE %s :You're now receiving CTCPs sent to %s\r\n",
 				      client->proxy_address, client->nick,client->listen->ircnet);
 		} else if (g_ascii_strcasecmp(args, "CTCP OFF") == 0) {
                         /* client wants proxy to handle all ctcps */
 			client->want_ctcp = 0;
-			proxy_outdata(client, ":%s NOTICE %s :Proxy is now handling itself CTCPs sent to %s\n",
+			proxy_outdata(client, ":%s NOTICE %s :Proxy is now handling itself CTCPs sent to %s\r\n",
 				      client->proxy_address, client->nick, client->listen->ircnet);
 		} else {
 			signal_emit("proxy client command", 3, client, args, data);
@@ -194,17 +200,17 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 	}
 
 	if (client->server == NULL || !client->server->connected) {
-		proxy_outdata(client, ":%s NOTICE %s :Not connected to server\n",
+		proxy_outdata(client, ":%s NOTICE %s :Not connected to server\r\n",
 			      client->proxy_address, client->nick);
                 return;
 	}
 
         /* check if the command could be redirected */
-	if (strcmp(cmd, "WHO") == 0)
+	if (g_strcmp0(cmd, "WHO") == 0)
 		grab_who(client, args);
-	else if (strcmp(cmd, "WHOWAS") == 0)
+	else if (g_strcmp0(cmd, "WHOWAS") == 0)
 		proxy_redirect_event(client, "whowas", 1, args, -1);
-	else if (strcmp(cmd, "WHOIS") == 0) {
+	else if (g_strcmp0(cmd, "WHOIS") == 0) {
 		char *p;
 
 		/* convert dots to spaces */
@@ -212,11 +218,11 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 			if (*p == ',') *p = ' ';
 
 		proxy_redirect_event(client, "whois", 1, args, TRUE);
-	} else if (strcmp(cmd, "ISON") == 0)
+	} else if (g_strcmp0(cmd, "ISON") == 0)
 		proxy_redirect_event(client, "ison", 1, args, -1);
-	else if (strcmp(cmd, "USERHOST") == 0)
+	else if (g_strcmp0(cmd, "USERHOST") == 0)
 		proxy_redirect_event(client, "userhost", 1, args, -1);
-	else if (strcmp(cmd, "MODE") == 0) {
+	else if (g_strcmp0(cmd, "MODE") == 0) {
 		/* convert dots to spaces */
 		char *slist, *str, mode, *p;
 		int argc;
@@ -252,7 +258,7 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 		}
 		g_free(str);
 		g_free(slist);
-	} else if (strcmp(cmd, "PRIVMSG") == 0) {
+	} else if (g_strcmp0(cmd, "PRIVMSG") == 0) {
 		/* send the message to other clients as well */
 		char *params, *target, *msg;
 
@@ -262,7 +268,7 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 
 		ignore_next = TRUE;
 		if (*msg != '\001' || msg[strlen(msg)-1] != '\001') {
-	        	signal_emit(ischannel(*target) ?
+			signal_emit(server_ischannel(SERVER(client->server), target) ?
 				    "message own_public" : "message own_private", 4,
 				    client->server, msg, target, target);
 		} else if (strncmp(msg+1, "ACTION ", 7) == 0) {
@@ -283,9 +289,9 @@ static void handle_client_cmd(CLIENT_REC *client, char *cmd, char *args,
 		}
 		ignore_next = FALSE;
 		g_free(params);
-	} else if (strcmp(cmd, "PING") == 0) {
+	} else if (g_strcmp0(cmd, "PING") == 0) {
 		proxy_redirect_event(client, "ping", 1, NULL, TRUE);
-	} else if (strcmp(cmd, "AWAY") == 0) {
+	} else if (g_strcmp0(cmd, "AWAY") == 0) {
 		/* set the away reason */
 		if (args != NULL) {
 			g_free(client->server->away_reason);
@@ -347,7 +353,8 @@ static void sig_listen(LISTEN_REC *listen)
 	rec->listen = listen;
 	rec->handle = sendbuf;
         rec->host = g_strdup(host);
-	if (strcmp(listen->ircnet, "*") == 0) {
+	rec->port = port;
+	if (g_strcmp0(listen->ircnet, "*") == 0) {
 		rec->proxy_address = g_strdup("irc.proxy");
 		rec->server = servers == NULL ? NULL : IRC_SERVER(servers->data);
 	} else {
@@ -361,9 +368,10 @@ static void sig_listen(LISTEN_REC *listen)
 	proxy_clients = g_slist_prepend(proxy_clients, rec);
 	rec->listen->clients = g_slist_prepend(rec->listen->clients, rec);
 
-        signal_emit("proxy client connected", 1, rec);
-	printtext(NULL, NULL, MSGLEVEL_CLIENTNOTICE,
-		  "Proxy: Client connected from %s", rec->host);
+	signal_emit("proxy client connecting", 1, rec);
+	printtext(rec->server, NULL, MSGLEVEL_CLIENTNOTICE,
+		  "Proxy: New client %s:%d on port %d (%s)",
+		  rec->host, rec->port, listen->port, listen->ircnet);
 }
 
 static void sig_incoming(IRC_SERVER_REC *server, const char *line)
@@ -371,7 +379,7 @@ static void sig_incoming(IRC_SERVER_REC *server, const char *line)
 	g_return_if_fail(line != NULL);
 
 	/* send server event to all clients */
-	g_string_printf(next_line, "%s\n", line);
+	g_string_printf(next_line, "%s\r\n", line);
 }
 
 static void sig_server_event(IRC_SERVER_REC *server, const char *line,
@@ -415,7 +423,7 @@ static void sig_server_event(IRC_SERVER_REC *server, const char *line,
 		}
 	}
 
-        if (strcmp(event, "event privmsg") == 0 &&
+        if (g_strcmp0(event, "event privmsg") == 0 &&
 	    strstr(args, " :\001") != NULL &&
 	    strstr(args, " :\001ACTION") == NULL) {
 		/* CTCP - either answer ourself or forward it to one client */
@@ -435,8 +443,8 @@ static void sig_server_event(IRC_SERVER_REC *server, const char *line,
 		return;
 	}
 
-	if (strcmp(event, "event ping") == 0 ||
-	    strcmp(event, "event pong") == 0) {
+	if (g_strcmp0(event, "event ping") == 0 ||
+	    g_strcmp0(event, "event pong") == 0) {
 		/* We want to answer ourself to PINGs and CTCPs.
 		   Also hide PONGs from clients. */
 		g_free(event);
@@ -462,10 +470,10 @@ static void event_connected(IRC_SERVER_REC *server)
 		CLIENT_REC *rec = tmp->data;
 
 		if (rec->connected && rec->server == NULL &&
-		    (strcmp(rec->listen->ircnet, "*") == 0 ||
+		    (g_strcmp0(rec->listen->ircnet, "*") == 0 ||
 		     (chatnet != NULL &&
 		      g_ascii_strcasecmp(chatnet, rec->listen->ircnet) == 0))) {
-			proxy_outdata(rec, ":%s NOTICE %s :Connected to server\n",
+			proxy_outdata(rec, ":%s NOTICE %s :Connected to server\r\n",
 				      rec->proxy_address, rec->nick);
 			rec->server = server;
 			proxy_client_reset_nick(rec);
@@ -478,7 +486,7 @@ static void proxy_server_disconnected(CLIENT_REC *client,
 {
 	GSList *tmp;
 
-	proxy_outdata(client, ":%s NOTICE %s :Connection lost to server %s\n",
+	proxy_outdata(client, ":%s NOTICE %s :Connection lost to server %s\r\n",
 		      client->proxy_address, client->nick,
 		      server->connrec->address);
 
@@ -634,7 +642,8 @@ static void remove_listen(LISTEN_REC *rec)
 static void read_settings(void)
 {
 	LISTEN_REC *rec;
-	GSList *remove_listens;
+	GSList *remove_listens = NULL;
+	GSList *add_listens = NULL;
 	char **ports, **tmp, *ircnet, *port;
 	int portnum;
 
@@ -653,17 +662,30 @@ static void read_settings(void)
 			continue;
 
 		rec = find_listen(ircnet, portnum);
-		if (rec == NULL)
-			add_listen(ircnet, portnum);
-		else
+		if (rec == NULL) {
+			rec = g_new0(LISTEN_REC, 1);
+			rec->ircnet = ircnet; /* borrow */
+			rec->port = portnum;
+			add_listens = g_slist_prepend(add_listens, rec);
+		} else {
+			/* remove from the list of listens to remove == keep it */
 			remove_listens = g_slist_remove(remove_listens, rec);
+		}
 	}
-	g_strfreev(ports);
 
 	while (remove_listens != NULL) {
-                remove_listen(remove_listens->data);
+		remove_listen(remove_listens->data);
 		remove_listens = g_slist_remove(remove_listens, remove_listens->data);
 	}
+
+	while (add_listens != NULL) {
+		rec = add_listens->data;
+		add_listen(rec->ircnet, rec->port);
+		add_listens = g_slist_remove(add_listens, rec);
+		g_free(rec);
+	}
+
+	g_strfreev(ports);
 }
 
 static void sig_dump(CLIENT_REC *client, const char *data)
@@ -676,6 +698,11 @@ static void sig_dump(CLIENT_REC *client, const char *data)
 
 void proxy_listen_init(void)
 {
+	if (enabled) {
+		return;
+	}
+	enabled = TRUE;
+
 	next_line = g_string_new(NULL);
 
 	proxy_clients = NULL;
@@ -697,6 +724,11 @@ void proxy_listen_init(void)
 
 void proxy_listen_deinit(void)
 {
+	if (!enabled) {
+		return;
+	}
+	enabled = FALSE;
+
 	while (proxy_listens != NULL)
 		remove_listen(proxy_listens->data);
 	g_string_free(next_line, TRUE);

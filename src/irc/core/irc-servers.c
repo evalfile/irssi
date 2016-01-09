@@ -32,6 +32,10 @@
 #include "irc-queries.h"
 #include "irc-servers-setup.h"
 #include "irc-servers.h"
+#include "irc-cap.h"
+#include "sasl.h"
+
+#include "channels-setup.h"
 #include "channel-rejoin.h"
 #include "servers-idle.h"
 #include "servers-reconnect.h"
@@ -71,13 +75,20 @@ static int isnickflag_func(SERVER_REC *server, char flag)
 
 static int ischannel_func(SERVER_REC *server, const char *data)
 {
-	if (*data == '@') {
-		/* @#channel, @+#channel */
+	IRC_SERVER_REC *irc_server = (IRC_SERVER_REC *) server;
+	char *chantypes, *statusmsg;
+
+	chantypes = g_hash_table_lookup(irc_server->isupport, "chantypes");
+	if (chantypes == NULL)
+		chantypes = "#&!+"; /* normal, local, secure, modeless */
+	statusmsg = g_hash_table_lookup(irc_server->isupport, "statusmsg");
+	if (statusmsg == NULL)
+		statusmsg = "@+";
+
+	while (strchr(statusmsg, *data) != NULL)
 		data++;
-		if (*data == '+' && ischannel(data[1]))
-			return 1;
-	}
-	return ischannel(*data);
+
+	return strchr(chantypes, *data) != NULL;
 }
 
 static char **split_line(const SERVER_REC *server, const char *line,
@@ -214,6 +225,13 @@ static void server_init(IRC_SERVER_REC *server)
 		g_free(cmd);
 	}
 
+	if (conn->sasl_mechanism != SASL_MECHANISM_NONE)
+		cap_toggle(server, "sasl", TRUE);
+
+	cap_toggle(server, "multi-prefix", TRUE);
+
+	irc_send_cmd_now(server, "CAP LS");
+
 	if (conn->password != NULL && *conn->password != '\0') {
                 /* send password */
 		cmd = g_strdup_printf("PASS %s", conn->password);
@@ -314,6 +332,8 @@ SERVER_REC *irc_server_init_connect(SERVER_CONNECT_REC *conn)
 
 void irc_server_connect(SERVER_REC *server)
 {
+	g_return_if_fail(server != NULL);
+
 	if (!server_start_connect(server)) {
                 server_connect_unref(server->connrec);
 		g_free(server);
@@ -409,7 +429,16 @@ static void sig_disconnected(IRC_SERVER_REC *server)
                         server_redirect_destroy(tmp->next->data);
 	}
 	g_slist_free(server->cmdqueue);
-        server->cmdqueue = NULL;
+	server->cmdqueue = NULL;
+
+	gslist_free_full(server->cap_active, (GDestroyNotify) g_free);
+	server->cap_active = NULL;
+
+	gslist_free_full(server->cap_supported, (GDestroyNotify) g_free);
+	server->cap_supported = NULL;
+
+	gslist_free_full(server->cap_queue, (GDestroyNotify) g_free);
+	server->cap_queue = NULL;
 
 	/* these are dynamically allocated only if isupport was sent */
 	g_hash_table_foreach(server->isupport,
@@ -588,32 +617,59 @@ char *irc_server_get_channels(IRC_SERVER_REC *server)
 	GString *chans, *keys;
 	char *ret;
 	int use_keys;
+	char *rejoin_channels_mode;
 
 	g_return_val_if_fail(server != NULL, FALSE);
+
+	rejoin_channels_mode = g_strdup(settings_get_str("rejoin_channels_on_reconnect"));
+
+	if (rejoin_channels_mode == NULL ||
+	    (g_ascii_strcasecmp(rejoin_channels_mode, "on") != 0 &&
+	     g_ascii_strcasecmp(rejoin_channels_mode, "off") != 0 &&
+	     g_ascii_strcasecmp(rejoin_channels_mode, "auto") != 0)) {
+		g_warning("Invalid value for 'rejoin_channels_on_reconnect', valid values are 'on', 'off', 'auto', using 'on' as default value.");
+		g_free(rejoin_channels_mode);
+		rejoin_channels_mode = g_strdup("on");
+	}
 
 	chans = g_string_new(NULL);
 	keys = g_string_new(NULL);
 	use_keys = FALSE;
 
+	/* do we want to rejoin channels in the first place? */
+	if(g_ascii_strcasecmp(rejoin_channels_mode, "off") == 0) {
+		g_string_free(chans, TRUE);
+		g_string_free(keys, TRUE);
+		g_free(rejoin_channels_mode);
+		return g_strdup("");
+	}
+
 	/* get currently joined channels */
 	for (tmp = server->channels; tmp != NULL; tmp = tmp->next) {
 		CHANNEL_REC *channel = tmp->data;
-
-		g_string_append_printf(chans, "%s,", channel->name);
-		g_string_append_printf(keys, "%s,", channel->key == NULL ? "x" :
-				  channel->key);
-		if (channel->key != NULL)
-			use_keys = TRUE;
+		CHANNEL_SETUP_REC *setup = channel_setup_find(channel->name, channel->server->connrec->chatnet);
+		if ((setup != NULL && setup->autojoin && g_ascii_strcasecmp(rejoin_channels_mode, "auto") == 0) ||
+		    g_ascii_strcasecmp(rejoin_channels_mode, "on") == 0) {
+			g_string_append_printf(chans, "%s,", channel->name);
+			g_string_append_printf(keys, "%s,", channel->key == NULL ? "x" : channel->key);
+			if (channel->key != NULL)
+				use_keys = TRUE;
+		}
 	}
 
 	/* get also the channels that are in rejoin list */
 	for (tmp = server->rejoin_channels; tmp != NULL; tmp = tmp->next) {
 		REJOIN_REC *rec = tmp->data;
+		CHANNEL_SETUP_REC *setup = channel_setup_find(rec->channel, server->tag);
 
-		g_string_append_printf(chans, "%s,", rec->channel);
-		g_string_append_printf(keys, "%s,", rec->key == NULL ? "x" :
-				  rec->key);
-		if (rec->key != NULL) use_keys = TRUE;
+		if ((setup != NULL && setup->autojoin && g_ascii_strcasecmp(rejoin_channels_mode, "auto") == 0) ||
+		    g_ascii_strcasecmp(rejoin_channels_mode, "on") == 0) {
+			g_string_append_printf(chans, "%s,", rec->channel);
+			g_string_append_printf(keys, "%s,", rec->key == NULL ? "x" :
+									rec->key);
+
+			if (rec->key != NULL) use_keys = TRUE;
+		}
 	}
 
 	if (chans->len > 0) {
@@ -625,6 +681,7 @@ char *irc_server_get_channels(IRC_SERVER_REC *server)
 	ret = chans->str;
 	g_string_free(chans, FALSE);
 	g_string_free(keys, TRUE);
+	g_free(rejoin_channels_mode);
 
 	return ret;
 }
@@ -638,7 +695,7 @@ static void event_connected(IRC_SERVER_REC *server, const char *data, const char
 
 	params = event_get_params(data, 1, &nick);
 
-	if (strcmp(server->nick, nick) != 0) {
+	if (g_strcmp0(server->nick, nick) != 0) {
 		/* nick changed unexpectedly .. connected via proxy, etc. */
 		g_free(server->nick);
 		server->nick = g_strdup(nick);
@@ -970,6 +1027,7 @@ void irc_server_init_isupport(IRC_SERVER_REC *server)
 
 void irc_servers_init(void)
 {
+	settings_add_str("servers", "rejoin_channels_on_reconnect", "on");
 	settings_add_str("misc", "usermode", DEFAULT_USER_MODE);
 	settings_add_str("misc", "split_line_start", "");
 	settings_add_str("misc", "split_line_end", "");

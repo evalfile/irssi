@@ -44,7 +44,7 @@ static int print_script_errors;
 static char *perl_args[] = {"", "-e", "0"};
 
 #define IS_PERL_SCRIPT(file) \
-	(strlen(file) > 3 && strcmp(file+strlen(file)-3, ".pl") == 0)
+	(strlen(file) > 3 && g_strcmp0(file+strlen(file)-3, ".pl") == 0)
 
 static void perl_script_destroy_package(PERL_SCRIPT_REC *script)
 {
@@ -82,16 +82,18 @@ static void perl_script_destroy(PERL_SCRIPT_REC *script)
 extern void boot_DynaLoader(pTHX_ CV* cv);
 
 #if PERL_STATIC_LIBS == 1
-extern void boot_Irssi(CV *cv);
+extern void boot_Irssi(pTHX_ CV *cv);
 
 XS(boot_Irssi_Core)
 {
 	dXSARGS;
+	PERL_UNUSED_VAR(items);
 
 	irssi_callXS(boot_Irssi, cv, mark);
         irssi_boot(Irc);
         irssi_boot(UI);
         irssi_boot(TextUI);
+	/* Make sure to keep this in line with perl_scripts_deinit below. */
 	XSRETURN_YES;
 }
 #endif
@@ -123,7 +125,7 @@ void perl_scripts_init(void)
 
 	perl_parse(my_perl, xs_init, G_N_ELEMENTS(perl_args), perl_args, NULL);
 #if PERL_STATIC_LIBS == 1
-	perl_eval_pv("Irssi::Core::boot_Irssi_Core();", TRUE);
+	perl_eval_pv("Irssi::Core::->boot_Irssi_Core(0.9);", TRUE);
 #endif
 
         perl_common_start();
@@ -154,6 +156,17 @@ void perl_scripts_deinit(void)
 
 	/* Unload all perl libraries loaded with dynaloader */
 	perl_eval_pv("foreach my $lib (@DynaLoader::dl_modules) { if ($lib =~ /^Irssi\\b/) { $lib .= '::deinit();'; eval $lib; } }", TRUE);
+
+#if PERL_STATIC_LIBS == 1
+	/* If perl is statically built we should manually deinit the modules
+	   which are booted in boot_Irssi_Core above */
+	perl_eval_pv("foreach my $lib (qw("
+		"Irssi" " "
+		"Irssi::Irc" " "
+		"Irssi::UI" " "
+		"Irssi::TextUI"
+		")) { eval $lib . '::deinit();'; }", TRUE);
+#endif
 
 	/* We could unload all libraries .. but this crashes with some
 	   libraries, probably because we don't call some deinit function..
@@ -314,7 +327,7 @@ PERL_SCRIPT_REC *perl_script_find(const char *name)
 	for (tmp = perl_scripts; tmp != NULL; tmp = tmp->next) {
 		PERL_SCRIPT_REC *rec = tmp->data;
 
-		if (strcmp(rec->name, name) == 0)
+		if (g_strcmp0(rec->name, name) == 0)
                         return rec;
 	}
 
@@ -331,7 +344,7 @@ PERL_SCRIPT_REC *perl_script_find_package(const char *package)
 	for (tmp = perl_scripts; tmp != NULL; tmp = tmp->next) {
 		PERL_SCRIPT_REC *rec = tmp->data;
 
-		if (strcmp(rec->package, package) == 0)
+		if (g_strcmp0(rec->package, package) == 0)
                         return rec;
 	}
 

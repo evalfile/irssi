@@ -26,6 +26,7 @@ real_sources = \
 	fe-netsplit.c \
 	fe-common-irc.c \
 	fe-whois.c \
+	fe-sasl.c \
 	irc-completion.c \
 	module-formats.c 
 
@@ -36,6 +37,7 @@ libfe_common_irc_a_SOURCES = \
 pkginc_fe_common_ircdir=$(pkgincludedir)/src/fe-common/irc
 pkginc_fe_common_irc_HEADERS = \
 	fe-irc-server.h \
+	fe-irc-channels.h \
 	module.h \
 	module-formats.h
 

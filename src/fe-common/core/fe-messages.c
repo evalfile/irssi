@@ -175,6 +175,7 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
 	int for_me, print_channel, level;
 	char *nickmode, *color, *freemsg = NULL;
 	HILIGHT_REC *hilight;
+	int match_beg = 0, match_end = 0;
 
 	/* NOTE: this may return NULL if some channel is just closed with
 	   /WINDOW CLOSE and server still sends the few last messages */
@@ -183,10 +184,12 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
                 nickrec = nicklist_find(chanrec, nick);
 
 	for_me = !settings_get_bool("hilight_nick_matches") ? FALSE :
-		nick_match_msg(chanrec, msg, server->nick);
+		!settings_get_bool("hilight_nick_matches_everywhere") ?
+		nick_match_msg(chanrec, msg, server->nick) :
+		nick_match_msg_everywhere(chanrec, msg, server->nick);
 	hilight = for_me ? NULL :
-		hilight_match_nick(server, target, nick, address, MSGLEVEL_PUBLIC, msg);
-	color = (hilight == NULL) ? NULL : hilight_get_color(hilight);
+		hilight_match(server, target, nick, address, MSGLEVEL_PUBLIC, msg, &match_beg, &match_end);
+	color = (hilight == NULL || !hilight->nick) ? NULL : hilight_get_color(hilight);
 
 	print_channel = chanrec == NULL ||
 		!window_item_is_active((WI_ITEM_REC *) chanrec);
@@ -212,10 +215,13 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
 	if (printnick == NULL)
 		printnick = nick;
 
+	TEXT_DEST_REC dest;
+	format_create_dest(&dest, server, target, level, NULL);
+	dest.hilight = hilight;
+	dest.match_beg = match_beg;
+	dest.match_end = match_end;
 	if (color != NULL) {
 		/* highlighted nick */
-		TEXT_DEST_REC dest;
-		format_create_dest(&dest, server, target, level, NULL);
 		hilight_update_text_dest(&dest,hilight);
 		if (!print_channel) /* message to active channel in window */
 			printformat_dest(&dest, TXT_PUBMSG_HILIGHT, color,
@@ -226,11 +232,11 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
 					 nickmode);
 	} else {
 		if (!print_channel)
-			printformat(server, target, level,
+			printformat_dest(&dest,
 				    for_me ? TXT_PUBMSG_ME : TXT_PUBMSG,
 				    printnick, msg, nickmode);
 		else
-			printformat(server, target, level,
+			printformat_dest(&dest,
 				    for_me ? TXT_PUBMSG_ME_CHANNEL :
 				    TXT_PUBMSG_CHANNEL,
 				    printnick, target, msg, nickmode);
@@ -249,7 +255,7 @@ static void sig_message_private(SERVER_REC *server, const char *msg,
 	int level = MSGLEVEL_MSGS;
 
 	/* own message returned by bouncer? */
-	int own = (!strcmp(nick, server->nick));
+	int own = (!g_strcmp0(nick, server->nick));
 
 	query = query_find(server, own ? target : nick);
 
@@ -323,8 +329,8 @@ static void sig_message_own_private(SERVER_REC *server, const char *msg,
 		/* this should only happen if some special target failed and
 		   we should display some error message. currently the special
 		   targets are only ',' and '.'. */
-		g_return_if_fail(strcmp(origtarget, ",") == 0 ||
-				 strcmp(origtarget, ".") == 0);
+		g_return_if_fail(g_strcmp0(origtarget, ",") == 0 ||
+				 g_strcmp0(origtarget, ".") == 0);
 
 		printformat(NULL, NULL, MSGLEVEL_CLIENTNOTICE,
 			    *origtarget == ',' ? TXT_NO_MSGS_GOT :
@@ -569,7 +575,7 @@ static int printnick_exists(NICK_REC *first, NICK_REC *ignore,
 	while (first != NULL) {
 		if (first != ignore) {
 			printnick = g_hash_table_lookup(printnicks, first);
-			if (printnick != NULL && strcmp(printnick, nick) == 0)
+			if (printnick != NULL && g_strcmp0(printnick, nick) == 0)
 				return TRUE;
 		}
 
@@ -694,6 +700,7 @@ void fe_messages_init(void)
 				      (GCompareFunc) g_direct_equal);
 
 	settings_add_bool("lookandfeel", "hilight_nick_matches", TRUE);
+	settings_add_bool("lookandfeel", "hilight_nick_matches_everywhere", FALSE);
 	settings_add_bool("lookandfeel", "emphasis", TRUE);
 	settings_add_bool("lookandfeel", "emphasis_replace", FALSE);
 	settings_add_bool("lookandfeel", "emphasis_multiword", FALSE);

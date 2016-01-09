@@ -51,7 +51,7 @@ static const char *completion_find(const char *key, int automatic)
 	if (node == NULL || node->type != NODE_TYPE_BLOCK)
 		return NULL;
 
-	node = config_node_section(node, key, -1);
+	node = iconfig_node_section(node, key, -1);
 	if (node == NULL)
 		return NULL;
 
@@ -141,7 +141,7 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
 	g_return_val_if_fail(pos != NULL, NULL);
 
 	continue_complete = complist != NULL && *pos == last_line_pos &&
-		strcmp(line, last_line) == 0;
+		g_strcmp0(line, last_line) == 0;
 
 	if (erase && !continue_complete)
 		return NULL;
@@ -362,8 +362,7 @@ static GList *completion_get_settings(const char *key, SettingType type)
 	for (tmp = sets; tmp != NULL; tmp = tmp->next) {
 		SETTINGS_REC *rec = tmp->data;
 
-		if ((type == -1 || rec->type == type) &&
-		    g_ascii_strncasecmp(rec->key, key, len) == 0)
+		if ((type == SETTING_TYPE_ANY || rec->type == type) && g_ascii_strncasecmp(rec->key, key, len) == 0)
 			complist = g_list_insert_sorted(complist, g_strdup(rec->key), (GCompareFunc) g_istr_cmp);
 	}
 	g_slist_free(sets);
@@ -681,8 +680,8 @@ static void sig_complete_set(GList **list, WINDOW_REC *window,
 	g_return_if_fail(line != NULL);
 
 	if (*line == '\0' ||
-	    !strcmp("-clear", line) || !strcmp("-default", line))
-		*list = completion_get_settings(word, -1);
+	    !g_strcmp0("-clear", line) || !g_strcmp0("-default", line))
+		*list = completion_get_settings(word, SETTING_TYPE_ANY);
 	else if (*line != '\0' && *word == '\0') {
 		SETTINGS_REC *rec = settings_get_record(line);
 		if (rec != NULL) {
@@ -758,7 +757,7 @@ static void cmd_completion(const char *data)
 	int len;
 
 	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_OPTIONS |
-			    PARAM_FLAG_GETREST,
+			    PARAM_FLAG_GETREST | PARAM_FLAG_STRIP_TRAILING_WS,
 			    "completion", &optlist, &key, &value))
 		return;
 
@@ -785,7 +784,7 @@ static void cmd_completion(const char *data)
 	} else if (*key != '\0' && *value != '\0') {
 		int automatic = g_hash_table_lookup(optlist, "auto") != NULL;
 
-		node = config_node_section(node, key, NODE_TYPE_BLOCK);
+		node = iconfig_node_section(node, key, NODE_TYPE_BLOCK);
 		iconfig_node_set_str(node, "value", value);
 		if (automatic)
 			iconfig_node_set_bool(node, "auto", TRUE);

@@ -127,7 +127,8 @@ static void cmd_ignore(const char *data)
 		return;
 	}
 
-	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_OPTIONS | PARAM_FLAG_GETREST,
+	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_OPTIONS | 
+			    PARAM_FLAG_GETREST | PARAM_FLAG_STRIP_TRAILING_WS,
 			    "ignore", &optlist, &mask, &levels))
 		return;
 
@@ -165,7 +166,7 @@ static void cmd_ignore(const char *data)
 		rec = g_new0(IGNORE_REC, 1);
 
 		rec->mask = mask == NULL || *mask == '\0' ||
-			strcmp(mask, "*") == 0 ? NULL : g_strdup(mask);
+			g_strcmp0(mask, "*") == 0 ? NULL : g_strdup(mask);
 		rec->channels = channels;
 	} else {
                 g_free_and_null(rec->pattern);

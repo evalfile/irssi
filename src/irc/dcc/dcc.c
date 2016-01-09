@@ -149,7 +149,7 @@ DCC_REC *dcc_find_request(int type, const char *nick, const char *arg)
 
 		if (dcc->type == type && !dcc_is_connected(dcc) &&
 		    g_ascii_strcasecmp(dcc->nick, nick) == 0 &&
-		    (arg == NULL || strcmp(dcc->arg, arg) == 0))
+		    (arg == NULL || g_strcmp0(dcc->arg, arg) == 0))
 			return dcc;
 	}
 
@@ -523,8 +523,8 @@ static void cmd_dcc_close(char *data, IRC_SERVER_REC *server)
 
 	g_return_if_fail(data != NULL);
 
-	if (!cmd_get_params(data, &free_arg, 3 | PARAM_FLAG_GETREST,
-			    &typestr, &nick, &arg))
+	if (!cmd_get_params(data, &free_arg, 3 | PARAM_FLAG_GETREST |
+			    PARAM_FLAG_STRIP_TRAILING_WS, &typestr, &nick, &arg))
 		return;
 
 	if (*nick == '\0') cmd_param_error(CMDERR_NOT_ENOUGH_PARAMS);
@@ -543,7 +543,7 @@ static void cmd_dcc_close(char *data, IRC_SERVER_REC *server)
 
 		next = tmp->next;
 		if (dcc->type == type && g_ascii_strcasecmp(dcc->nick, nick) == 0 &&
-		    (*arg == '\0' || strcmp(dcc->arg, arg) == 0)) {
+		    (*arg == '\0' || g_strcmp0(dcc->arg, arg) == 0)) {
 			dcc_reject(dcc, server);
 			found = TRUE;
 		}

@@ -398,7 +398,7 @@ void parse_channel_modes(IRC_CHANNEL_REC *channel, const char *setby,
 		old_key = NULL;
 	}
 
-	if (strcmp(newmode->str, channel->mode) != 0) {
+	if (g_strcmp0(newmode->str, channel->mode) != 0) {
 		g_free(channel->mode);
 		channel->mode = g_strdup(newmode->str);
 
@@ -488,7 +488,7 @@ static void event_mode(IRC_SERVER_REC *server, const char *data,
 	params = event_get_params(data, 2 | PARAM_FLAG_GETREST,
 				  &channel, &mode);
 
-	if (!ischannel(*channel)) {
+	if (!server_ischannel(SERVER(server), channel)) {
 		/* user mode change */
 		parse_user_mode(server, mode);
 	} else {
@@ -536,7 +536,7 @@ static void sig_req_usermode_change(IRC_SERVER_REC *server, const char *data,
 
 	params = event_get_params(data, 2 | PARAM_FLAG_GETREST,
 				  &target, &mode);
-	if (!ischannel(*target)) {
+	if (!server_ischannel(SERVER(server), target)) {
                 /* we requested a user mode change, save this */
 		mode = modes_join(NULL, server->wanted_usermode, mode, FALSE);
                 g_free_not_null(server->wanted_usermode);
@@ -835,14 +835,14 @@ static void cmd_mode(const char *data, IRC_SERVER_REC *server,
 
 	if (*data == '+' || *data == '-') {
 		target = "*";
-		if (!cmd_get_params(data, &free_arg, 1 | PARAM_FLAG_GETREST, &mode))
+		if (!cmd_get_params(data, &free_arg, 1 | PARAM_FLAG_GETREST | PARAM_FLAG_STRIP_TRAILING_WS, &mode))
 			return;
 	} else {
-		if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_GETREST, &target, &mode))
+		if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_GETREST | PARAM_FLAG_STRIP_TRAILING_WS, &target, &mode))
 			return;
 	}
 
-	if (strcmp(target, "*") == 0) {
+	if (g_strcmp0(target, "*") == 0) {
 		if (!IS_IRC_CHANNEL(channel))
 			cmd_param_error(CMDERR_NOT_JOINED);
 
@@ -856,7 +856,7 @@ static void cmd_mode(const char *data, IRC_SERVER_REC *server,
 			target = chanrec->name;
 
 		irc_send_cmdv(server, "MODE %s", target);
-	} else if (ischannel(*target))
+	} else if (server_ischannel(SERVER(server), target))
 		channel_set_mode(server, target, mode);
 	else {
 		if (g_ascii_strcasecmp(target, server->nick) == 0) {

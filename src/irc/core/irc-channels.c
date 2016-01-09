@@ -99,7 +99,7 @@ static void irc_channels_join(IRC_SERVER_REC *server, const char *data,
 	tmp = chanlist;
 	for (;; tmp++) {
 		if (*tmp !=  NULL) {
-			channel = ischannel(**tmp) ? g_strdup(*tmp) :
+			channel = server_ischannel(SERVER(server), *tmp) ? g_strdup(*tmp) :
 			g_strdup_printf("#%s", *tmp);
 
 			chanrec = irc_channel_find(server, channel);
@@ -134,7 +134,7 @@ static void irc_channels_join(IRC_SERVER_REC *server, const char *data,
 			if (use_keys)
 				cmdlen += outkeys->len;
 			if (*tmpstr != NULL)
-				cmdlen += ischannel(**tmpstr) ? strlen(*tmpstr) :
+				cmdlen += server_ischannel(SERVER(server), *tmpstr) ? strlen(*tmpstr) :
 					  strlen(*tmpstr)+1;
 			if (*tmpkey != NULL)
 				cmdlen += strlen(*tmpkey);
@@ -146,11 +146,13 @@ static void irc_channels_join(IRC_SERVER_REC *server, const char *data,
 				continue;
 		}
 		if (outchans->len > 0) {
-			g_string_truncate(outchans, outchans->len-1);
-			g_string_truncate(outkeys, outkeys->len-1);
-			irc_send_cmdv(IRC_SERVER(server),
-				      use_keys ? "JOIN %s %s" : "JOIN %s",
-				      outchans->str, outkeys->str);
+			g_string_truncate(outchans, outchans->len - 1);
+			g_string_truncate(outkeys, outkeys->len - 1);
+
+			if (use_keys)
+				irc_send_cmdv(IRC_SERVER(server), "JOIN %s %s", outchans->str, outkeys->str);
+			else
+				irc_send_cmdv(IRC_SERVER(server), "JOIN %s", outchans->str);
 		}
 		cmdlen = 0;
 		g_string_truncate(outchans,0);
@@ -172,6 +174,13 @@ static CHANNEL_REC *irc_channel_find_server(SERVER_REC *server,
 					    const char *channel)
 {
 	GSList *tmp;
+	char *fmt_channel;
+
+	/* if 'channel' has no leading # this lookup is going to fail, add a
+	 * octothorpe in front of it to handle this case. */
+	fmt_channel = server_ischannel(SERVER(server), channel) ?
+	    g_strdup(channel) :
+	    g_strdup_printf("#%s", channel);
 
 	for (tmp = server->channels; tmp != NULL; tmp = tmp->next) {
 		CHANNEL_REC *rec = tmp->data;
@@ -180,12 +189,18 @@ static CHANNEL_REC *irc_channel_find_server(SERVER_REC *server,
                         continue;
 
 		/* check both !ABCDEchannel and !channel */
-		if (IRC_SERVER(server)->nick_comp_func(channel, rec->name) == 0)
+		if (IRC_SERVER(server)->nick_comp_func(fmt_channel, rec->name) == 0) {
+			g_free(fmt_channel);
 			return rec;
+		}
 
-		if (IRC_SERVER(server)->nick_comp_func(channel, rec->visible_name) == 0)
+		if (IRC_SERVER(server)->nick_comp_func(fmt_channel, rec->visible_name) == 0) {
+			g_free(fmt_channel);
 			return rec;
+		}
 	}
+
+	g_free(fmt_channel);
 
 	return NULL;
 }

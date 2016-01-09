@@ -10,7 +10,7 @@ INSTALL file for information about perl problems.
  ---------------
 
 Scripts are run with /SCRIPT LOAD command, or the default /RUN alias.
-"/SCRIPT" shows list of running script, and /SCRIPT UNLOAD can unload
+"/SCRIPT" shows list of running scripts, and /SCRIPT UNLOAD can unload
 scripts.
 
 Scripts should be placed to ~/.irssi/scripts/ or
@@ -1185,3 +1185,11 @@ Client->{}
   connected - whether the client is connected and ready
   want_ctcp - whether the client wants to receive CTCPs
   ircnet - network tag of the network we proxy
+
+
+
+
+ Bugs and Limitations
+ --------------------
+* Calling die in 'script error' handler causes segfault (#101)
+* Storing and later using any Irssi object may result in use-after-free related crash

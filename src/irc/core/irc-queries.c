@@ -60,20 +60,20 @@ static void check_query_changes(IRC_SERVER_REC *server, const char *nick,
 {
 	QUERY_REC *query;
 
-	if (ischannel(*target))
-                return;
+	if (server_ischannel(SERVER(server), target))
+		return;
 
 	query = irc_query_find(server, nick);
 	if (query == NULL)
 		return;
 
-	if (strcmp(query->name, nick) != 0) {
+	if (g_strcmp0(query->name, nick) != 0) {
 		/* upper/lowercase chars in nick changed */
 		query_change_nick(query, nick);
 	}
 
 	if (address != NULL && (query->address == NULL ||
-				strcmp(query->address, address) != 0)) {
+				g_strcmp0(query->address, address) != 0)) {
                 /* host changed */
 		query_change_address(query, address);
 	}
@@ -109,7 +109,7 @@ static void event_nick(SERVER_REC *server, const char *data,
 	query = query_find(server, orignick);
 	if (query != NULL) {
 		params = event_get_params(data, 1, &nick);
-		if (strcmp(query->name, nick) != 0)
+		if (g_strcmp0(query->name, nick) != 0)
 			query_change_nick(query, nick);
 		g_free(params);
 	}

@@ -59,7 +59,7 @@ static SETTINGS_REC *settings_get(const char *key, SettingType type)
 		g_warning("settings_get(%s) : not found", key);
 		return NULL;
 	}
-	if (type != -1 && rec->type != type) {
+	if (type != SETTING_TYPE_ANY && rec->type != type) {
 		g_warning("settings_get(%s) : invalid type", key);
 		return NULL;
 	}
@@ -77,7 +77,7 @@ settings_get_str_type(const char *key, SettingType type)
 	if (rec == NULL) return NULL;
 
 	node = iconfig_node_traverse("settings", FALSE);
-	node = node == NULL ? NULL : config_node_section(node, rec->module, -1);
+	node = node == NULL ? NULL : iconfig_node_section(node, rec->module, -1);
 
 	return node == NULL ? rec->default_value.v_string :
 		config_node_get_str(node, key, rec->default_value.v_string);
@@ -85,7 +85,7 @@ settings_get_str_type(const char *key, SettingType type)
 
 const char *settings_get_str(const char *key)
 {
-	return settings_get_str_type(key, -1);
+	return settings_get_str_type(key, SETTING_TYPE_ANY);
 }
 
 int settings_get_int(const char *key)
@@ -97,7 +97,7 @@ int settings_get_int(const char *key)
 	if (rec == NULL) return 0;
 
 	node = iconfig_node_traverse("settings", FALSE);
-	node = node == NULL ? NULL : config_node_section(node, rec->module, -1);
+	node = node == NULL ? NULL : iconfig_node_section(node, rec->module, -1);
 
 	return node == NULL ? rec->default_value.v_int :
 		config_node_get_int(node, key, rec->default_value.v_int);
@@ -112,7 +112,7 @@ int settings_get_bool(const char *key)
 	if (rec == NULL) return FALSE;
 
 	node = iconfig_node_traverse("settings", FALSE);
-	node = node == NULL ? NULL : config_node_section(node, rec->module, -1);
+	node = node == NULL ? NULL : iconfig_node_section(node, rec->module, -1);
 
 	return node == NULL ? rec->default_value.v_bool :
 		config_node_get_bool(node, key, rec->default_value.v_bool);
@@ -163,6 +163,7 @@ char *settings_get_print(SETTINGS_REC *rec)
 	case SETTING_TYPE_TIME:
 	case SETTING_TYPE_LEVEL:
 	case SETTING_TYPE_SIZE:
+	case SETTING_TYPE_ANY:
 		value = g_strdup(settings_get_str(rec->key));
 		break;
 	}
@@ -295,7 +296,7 @@ void settings_remove(const char *key)
 static int settings_remove_hash(const char *key, SETTINGS_REC *rec,
 				const char *module)
 {
-	if (strcmp(rec->module, module) == 0) {
+	if (g_strcmp0(rec->module, module) == 0) {
 		settings_unref(rec, FALSE);
                 return TRUE;
 	}
@@ -324,7 +325,7 @@ static CONFIG_NODE *settings_get_node(const char *key)
 	}
 
 	node = iconfig_node_traverse("settings", TRUE);
-	return config_node_section(node, rec->module, NODE_TYPE_BLOCK);
+	return iconfig_node_section(node, rec->module, NODE_TYPE_BLOCK);
 }
 
 void settings_set_str(const char *key, const char *value)
@@ -380,10 +381,10 @@ SettingType settings_get_type(const char *key)
 {
 	SETTINGS_REC *rec;
 
-	g_return_val_if_fail(key != NULL, -1);
+	g_return_val_if_fail(key != NULL, SETTING_TYPE_ANY);
 
 	rec = g_hash_table_lookup(settings, key);
-	return rec == NULL ? -1 : rec->type;
+	return rec == NULL ? SETTING_TYPE_ANY : rec->type;
 }
 
 /* Get the record of the setting */
@@ -420,7 +421,7 @@ static void settings_clean_invalid_module(const char *module)
 	node = iconfig_node_traverse("settings", FALSE);
 	if (node == NULL) return;
 
-	node = config_node_section(node, module, -1);
+	node = iconfig_node_section(node, module, -1);
 	if (node == NULL) return;
 
 	for (tmp = config_node_first(node->value); tmp != NULL; tmp = next) {
@@ -428,7 +429,7 @@ static void settings_clean_invalid_module(const char *module)
                 next = config_node_next(tmp);
 
 		set = g_hash_table_lookup(settings, subnode->key);
-		if (set == NULL || strcmp(set->module, module) != 0)
+		if (set == NULL || g_strcmp0(set->module, module) != 0)
                         iconfig_node_remove(node, subnode);
 	}
 }
@@ -458,7 +459,7 @@ static int backwards_compatibility(const char *module, CONFIG_NODE *node,
 	new_value = NULL; new_key = NULL; new_module = NULL;
 
 	/* fe-text term_type -> fe-common/core term_charset - for 0.8.10-> */
-	if (strcmp(module, "fe-text") == 0) {
+	if (g_strcmp0(module, "fe-text") == 0) {
 		if (g_ascii_strcasecmp(node->key, "term_type") == 0 ||
 		    /* kludge for cvs-version where term_charset was in fe-text */
 		    g_ascii_strcasecmp(node->key, "term_charset") == 0) {
@@ -468,7 +469,7 @@ static int backwards_compatibility(const char *module, CONFIG_NODE *node,
 				g_strdup(node->value);
 			new_node = iconfig_node_traverse("settings", FALSE);
 			new_node = new_node == NULL ? NULL :
-				config_node_section(new_node, new_module, -1);
+				iconfig_node_section(new_node, new_module, -1);
 
 			config_node_set_str(mainconfig, new_node,
 					    new_key, new_value);
@@ -502,7 +503,7 @@ void settings_check_module(const char *module)
         g_return_if_fail(module != NULL);
 
 	node = iconfig_node_traverse("settings", FALSE);
-	node = node == NULL ? NULL : config_node_section(node, module, -1);
+	node = node == NULL ? NULL : iconfig_node_section(node, module, -1);
 	if (node == NULL) return;
 
         errors = g_string_new(NULL);
@@ -520,7 +521,7 @@ void settings_check_module(const char *module)
 		if (backwards_compatibility(module, node, parent))
 			continue;
 
-		if (set == NULL || strcmp(set->module, module) != 0) {
+		if (set == NULL || g_strcmp0(set->module, module) != 0) {
 			g_string_append_printf(errors, " %s", node->key);
                         count++;
 		}
@@ -548,9 +549,9 @@ void settings_check_module(const char *module)
 
 static int settings_compare(SETTINGS_REC *v1, SETTINGS_REC *v2)
 {
-	int cmp = strcmp(v1->section, v2->section);
+	int cmp = g_strcmp0(v1->section, v2->section);
 	if (!cmp)
-		cmp = strcmp(v1->key, v2->key);
+		cmp = g_strcmp0(v1->key, v2->key);
 	return cmp;
 }
 

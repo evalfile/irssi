@@ -339,7 +339,7 @@ static GSList *redirect_cmd_list_find(GSList *list, const char *event)
 	while (list != NULL) {
 		const char *str = list->data;
 
-		if (strcmp(str, event) == 0)
+		if (g_strcmp0(str, event) == 0)
                         break;
                 list = list->next->next;
 	}
@@ -365,7 +365,7 @@ static const char *redirect_match(REDIRECT_REC *redirect, const char *event,
 	   use the default signal */
         signal = NULL;
 	for (tmp = redirect->signals; tmp != NULL; tmp = tmp->next->next) {
-		if (strcmp(tmp->data, event) == 0) {
+		if (g_strcmp0(tmp->data, event) == 0) {
 			signal = tmp->next->data;
 			break;
 		}
@@ -433,9 +433,11 @@ static void redirect_abort(IRC_SERVER_REC *server, REDIRECT_REC *rec)
 
 	if (rec->aborted || !rec->destroyed) {
 		/* emit the failure signal */
-		str = g_strdup_printf(rec->failure_signal != NULL ?
-				      "FAILED %s: %s" : "FAILED %s",
-				      rec->cmd->name, rec->failure_signal);
+		if (rec->failure_signal != NULL)
+			str = g_strdup_printf("FAILED %s: %s", rec->cmd->name, rec->failure_signal);
+		else
+			str = g_strdup_printf("FAILED %s", rec->cmd->name);
+
 		rawlog_redirect(server->rawlog, str);
 		g_free(str);
 
@@ -527,7 +529,7 @@ server_redirect_get(IRC_SERVER_REC *server, const char *prefix,
 		next = ptr->next;
 		r = ptr->data;
 		if (prefix != NULL && r->prefix != NULL &&
-				strcmp(prefix, r->prefix)) {
+				g_strcmp0(prefix, r->prefix)) {
 			/* not from this server */
 			continue;
 		}

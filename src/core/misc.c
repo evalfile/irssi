@@ -184,7 +184,7 @@ int strarray_find(char **array, const char *item)
 GSList *gslist_find_string(GSList *list, const char *key)
 {
 	for (; list != NULL; list = list->next)
-		if (strcmp(list->data, key) == 0) return list;
+		if (g_strcmp0(list->data, key) == 0) return list;
 
 	return NULL;
 }
@@ -209,6 +209,30 @@ void *gslist_foreach_find(GSList *list, FOREACH_FIND_FUNC func, const void *data
 	}
 
 	return NULL;
+}
+
+void gslist_free_full (GSList *list, GDestroyNotify free_func)
+{
+	GSList *tmp;
+
+	if (list == NULL)
+		return;
+
+	for (tmp = list; tmp != NULL; tmp = tmp->next)
+		free_func(tmp->data);
+
+	g_slist_free(list);
+}
+
+GSList *gslist_remove_string (GSList *list, const char *str)
+{
+	GSList *l;
+
+	l = g_slist_find_custom(list, str, (GCompareFunc) g_strcmp0);
+	if (l != NULL)
+		return g_slist_remove_link(list, l);
+
+	return list;
 }
 
 /* `list' contains pointer to structure with a char* to string. */
@@ -269,7 +293,7 @@ GSList *hashtable_get_keys(GHashTable *hash)
 GList *glist_find_string(GList *list, const char *key)
 {
 	for (; list != NULL; list = list->next)
-		if (strcmp(list->data, key) == 0) return list;
+		if (g_strcmp0(list->data, key) == 0) return list;
 
 	return NULL;
 }
@@ -406,11 +430,7 @@ int mkpath(const char *path, int mode)
 
 		dir = g_strndup(path, (int) (p-path));
 		if (stat(dir, &statbuf) != 0) {
-#ifndef WIN32
 			if (mkdir(dir, mode) == -1)
-#else
-			if (_mkdir(dir) == -1)
-#endif
 			{
 				g_free(dir);
 				return -1;
@@ -973,22 +993,22 @@ char **strsplit_len(const char *str, int len, gboolean onspace)
 	int n;
 	int offset;
 
-	for (n = 0; *str != '\0'; n++, str += MIN(len - offset, strlen(str))) {
-		offset = 0;
-		if (onspace) {
+	for (n = 0; *str != '\0'; n++, str += offset) {
+		offset = MIN(len, strlen(str));
+		if (onspace && strlen(str) > len) {
 			/*
 			 * Try to find a space to split on and leave
 			 * the space on the previous line.
 			 */
 			int i;
-			for (i = 0; i < len; i++) {
-				if (str[len-1-i] == ' ') {
+			for (i = len - 1; i > 0; i--) {
+				if (str[i] == ' ') {
 					offset = i;
 					break;
 				}
 			}
 		}
-		ret[n] = g_strndup(str, len - offset);
+		ret[n] = g_strndup(str, offset);
 		ret = g_renew(char *, ret, n + 2);
 	}
 	ret[n] = NULL;

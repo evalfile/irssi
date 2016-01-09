@@ -271,36 +271,6 @@ static void check_files(void)
 	}
 }
 
-#ifdef WIN32
-static void winsock_init(void)
-{
-	WORD wVersionRequested;
-	WSADATA wsaData;
-
-	wVersionRequested = MAKEWORD(2, 2);
-
-	if (WSAStartup(wVersionRequested, &wsaData) != 0) {
-		printf("Error initializing winsock\n");
-		exit(1);
-	}
-}
-#endif
-
-#ifdef USE_GC
-#ifdef HAVE_GC_H
-#  include <gc.h>
-#else
-#  include <gc/gc.h>
-#endif
-
-GMemVTable gc_mem_table = {
-	GC_malloc,
-	GC_realloc,
-	GC_free,
-
-	NULL, NULL, NULL
-};
-#endif
 
 int main(int argc, char **argv)
 {
@@ -310,10 +280,7 @@ int main(int argc, char **argv)
 		{ "version", 'v', 0, G_OPTION_ARG_NONE, &version, "Display irssi version", NULL },
 		{ NULL }
 	};
-
-#ifdef USE_GC
-	g_mem_set_vtable(&gc_mem_table);
-#endif
+	int loglev;
 
 	core_register_options();
 	fe_common_core_register_options();
@@ -334,9 +301,6 @@ int main(int argc, char **argv)
 
 	check_files();
 
-#ifdef WIN32
-        winsock_init();
-#endif
 #ifdef HAVE_SOCKS
 	SOCKSinit(argv[0]);
 #endif
@@ -352,6 +316,7 @@ int main(int argc, char **argv)
 	   you have to call setlocale(LC_ALL, "") */
 	setlocale(LC_ALL, "");
 
+	loglev = g_log_set_always_fatal(G_LOG_FATAL_MASK | G_LOG_LEVEL_CRITICAL);
 	textui_init();
 
 	if (!dummy && !term_init()) {
@@ -360,15 +325,13 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
+	g_log_set_always_fatal(loglev);
 	textui_finish_init();
 	main_loop = g_main_new(TRUE);
 
 	/* Does the same as g_main_run(main_loop), except we
 	   can call our dirty-checker after each iteration */
 	while (!quitting) {
-#ifdef USE_GC
-		GC_collect_a_little();
-#endif
 		if (!dummy) term_refresh_freeze();
 		g_main_iteration(TRUE);
                 if (!dummy) term_refresh_thaw();

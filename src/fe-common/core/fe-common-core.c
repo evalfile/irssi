@@ -168,9 +168,7 @@ void fe_common_core_init(void)
 	keyboard_init();
 	printtext_init();
 	formats_init();
-#ifndef WIN32
         fe_exec_init();
-#endif
         fe_expandos_init();
 	fe_help_init();
 	fe_ignore_init();
@@ -211,9 +209,7 @@ void fe_common_core_deinit(void)
 	keyboard_deinit();
 	printtext_deinit();
 	formats_deinit();
-#ifndef WIN32
         fe_exec_deinit();
-#endif
         fe_expandos_deinit();
 	fe_help_deinit();
 	fe_ignore_deinit();
@@ -326,8 +322,11 @@ static void autoconnect_servers(void)
 
 	if (autocon_server != NULL) {
 		/* connect to specified server */
-		str = g_strdup_printf(autocon_password == NULL ? "%s %d" : "%s %d %s",
-				      autocon_server, autocon_port, autocon_password);
+		if (autocon_password == NULL)
+			str = g_strdup_printf("%s %d", autocon_server, autocon_port);
+		else
+			str = g_strdup_printf("%s %d %s", autocon_server, autocon_port, autocon_password);
+
 		signal_emit("command connect", 1, str);
 		g_free(str);
 		return;
@@ -447,18 +446,7 @@ void fe_common_core_finish_init(void)
 	signal_add_first("setup changed", (SIGNAL_FUNC) sig_setup_changed);
 
         /* _after_ windows are created.. */
-#if GLIB_CHECK_VERSION(2,6,0)
 	g_log_set_default_handler((GLogFunc) glog_func, NULL);
-#else
-	g_log_set_handler(G_LOG_DOMAIN,
-			  (GLogLevelFlags) (G_LOG_LEVEL_CRITICAL |
-					    G_LOG_LEVEL_WARNING),
-			  (GLogFunc) glog_func, NULL);
-	g_log_set_handler("GLib",
-			  (GLogLevelFlags) (G_LOG_LEVEL_CRITICAL |
-					    G_LOG_LEVEL_WARNING),
-			  (GLogFunc) glog_func, NULL); /* send glib errors to the same place */
-#endif
 
 	if (setup_changed)
                 signal_emit("setup changed", 0);

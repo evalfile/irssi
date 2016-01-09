@@ -44,7 +44,7 @@ static void dcc_request(CHAT_DCC_REC *dcc)
         if (!IS_DCC_CHAT(dcc)) return;
 
 	printformat(dcc->server, NULL, MSGLEVEL_DCC,
-		    ischannel(*dcc->target) ? IRCTXT_DCC_CHAT_CHANNEL :
+		    server_ischannel(SERVER(dcc->server), dcc->target) ? IRCTXT_DCC_CHAT_CHANNEL :
 		    IRCTXT_DCC_CHAT, dcc->id, dcc->addrstr,
 		    dcc->port, dcc->target);
 }
@@ -243,7 +243,7 @@ static void cmd_msg(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
 		return;
 
 	/* handle only DCC messages */
-	if (strcmp(target, "*") == 0)
+	if (g_strcmp0(target, "*") == 0)
 		dcc = item_get_dcc(item);
 	else if (*target == '=')
 		dcc = dcc_chat_find_id(target+1);
