@@ -412,7 +412,11 @@ void dcc_get_connect(GET_DCC_REC *dcc)
 
 	if (dcc->handle != NULL) {
 		if (dcc->secure)
-			sig_dccget_connected_ssl(dcc);
+			dcc->tagconn =
+				g_input_add(dcc->handle,
+					G_INPUT_WRITE | G_INPUT_READ,
+				    	(GInputFunction) sig_dccget_connected_ssl,
+				    	dcc);
 		else
 			dcc->tagconn =
 				g_input_add(dcc->handle,
