@@ -1,4 +1,14 @@
 v0.8.18-head 2016-xx-xx  The Irssi team <staff@irssi.org>
+	* Removed --disable-ipv6
+	+ irssiproxy can now forward all tags through a single port.
+	+ send channel -botcmds immediately when no mask is specified (#175).
+	- Correctly store te layout of SAFE channels (#183).
+
+v0.8.18 2016-02-13  The Irssi team <staff@irssi.org>
+	* Modules will now require to define a
+	      void MODULENAME ## _abicheck(int *version)
+	  method to ensure that they are compiled against the correct Irssi
+	  version.
 	* The signature of "message private" has been changed to
 	      5: server, message, nick, address, target
 	  in order to support "self messages". Module authors should
@@ -22,6 +32,7 @@ v0.8.18-head 2016-xx-xx  The Irssi team <staff@irssi.org>
 	+ The config parser is more robust and prints out better diagnostics on
 	  incorrect config files.
 	+ Ctrl+^ (FS#721) and Ctrl+J can now be bound.
+	+ Command history can be cleared with /window history -clear
 	+ /hilight -mask -line is now supported (FS#275).
 	+ CHANTYPES are now supported.
 	+ Improved reload speed of ignores.
@@ -32,6 +43,7 @@ v0.8.18-head 2016-xx-xx  The Irssi team <staff@irssi.org>
 	+ Disable SSLv3 due to the POODLE vulnerability.
 	+ SSL ciphers can now be specified per server.
 	+ Added SNI support for SSL.
+	- /ignore now respects -pattern on merge (#78).
 	- irssiproxy (BNC) module now uses correct line endings.
 	- Fix missing lines on large pastes (FS#905).
 	- Correctly preserve STATUSMSG prefixes (#291).

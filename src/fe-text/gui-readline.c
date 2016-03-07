@@ -456,20 +456,19 @@ static void key_send_line(void)
 	add_history = *str != '\0';
 	history = command_history_current(active_win);
 
+	if (redir != NULL && redir->flags & ENTRY_REDIRECT_FLAG_HIDDEN)
+		add_history = 0;
+
+	if (add_history && history != NULL) {
+		command_history_add(history, str);
+	}
+
 	if (redir == NULL) {
 		signal_emit("send command", 3, str,
 			    active_win->active_server,
 			    active_win->active);
 	} else {
-		if (redir->flags & ENTRY_REDIRECT_FLAG_HIDDEN)
-                        add_history = 0;
 		handle_entry_redirect(str);
-	}
-
-	if (add_history) {
-		history = command_history_find(history);
-		if (history != NULL)
-			command_history_add(history, str);
 	}
 
 	if (active_entry != NULL)
@@ -548,7 +547,7 @@ static void key_forward_to_space(void)
 static void key_erase_line(void)
 {
 	gui_entry_set_pos(active_entry, active_entry->text_len);
-	gui_entry_erase(active_entry, active_entry->text_len, TRUE);
+	gui_entry_erase(active_entry, active_entry->text_len, CUTBUFFER_UPDATE_REPLACE);
 }
 
 static void key_erase_to_beg_of_line(void)
@@ -556,7 +555,7 @@ static void key_erase_to_beg_of_line(void)
 	int pos;
 
 	pos = gui_entry_get_pos(active_entry);
-	gui_entry_erase(active_entry, pos, TRUE);
+	gui_entry_erase(active_entry, pos, CUTBUFFER_UPDATE_REPLACE);
 }
 
 static void key_erase_to_end_of_line(void)
@@ -565,7 +564,7 @@ static void key_erase_to_end_of_line(void)
 
 	pos = gui_entry_get_pos(active_entry);
 	gui_entry_set_pos(active_entry, active_entry->text_len);
-	gui_entry_erase(active_entry, active_entry->text_len - pos, TRUE);
+	gui_entry_erase(active_entry, active_entry->text_len - pos, CUTBUFFER_UPDATE_REPLACE);
 }
 
 static void key_yank_from_cutbuffer(void)
@@ -612,12 +611,12 @@ static void key_delete_character(void)
 
 static void key_backspace(void)
 {
-	gui_entry_erase(active_entry, 1, FALSE);
+	gui_entry_erase(active_entry, 1, CUTBUFFER_UPDATE_NOOP);
 }
 
 static void key_delete_previous_word(void)
 {
-	gui_entry_erase_word(active_entry, FALSE);
+	gui_entry_erase_word(active_entry, FALSE, CUTBUFFER_UPDATE_REPLACE);
 }
 
 static void key_delete_next_word(void)
@@ -627,7 +626,7 @@ static void key_delete_next_word(void)
 
 static void key_delete_to_previous_space(void)
 {
-	gui_entry_erase_word(active_entry, TRUE);
+	gui_entry_erase_word(active_entry, TRUE, CUTBUFFER_UPDATE_REPLACE);
 }
 
 static void key_delete_to_next_space(void)
