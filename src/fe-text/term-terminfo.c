@@ -611,8 +611,6 @@ void term_stop(void)
 {
 	terminfo_stop(current_term);
 	kill(getpid(), SIGTSTP);
-	terminfo_cont(current_term);
-	irssi_redraw();
 }
 
 static int input_utf8(const unsigned char *buffer, int size, unichar *result)
@@ -709,12 +707,4 @@ void term_gets(GArray *buffer, int *line_count)
                         term_inbuf_pos -= i;
 		}
 	}
-}
-
-void term_set_bracketed_paste_mode(int enable)
-{
-	if (enable)
-		tputs("\e[?2004h", 0, term_putchar);
-	else
-		tputs("\e[?2004l", 0, term_putchar);
 }

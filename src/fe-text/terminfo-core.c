@@ -395,6 +395,20 @@ static void _ignore_parm(TERM_REC *term, int param)
 {
 }
 
+static void terminfo_set_appkey_mode(TERM_REC *term, int set)
+{
+	if (term->TI_smkx && term->TI_rmkx)
+		tput(tparm(set ? term->TI_smkx : term->TI_rmkx));
+}
+
+static void term_dec_set_bracketed_paste_mode(int enable)
+{
+	if (enable)
+		tputs("\e[?2004h", 0, term_putchar);
+	else
+		tputs("\e[?2004l", 0, term_putchar);
+}
+
 static void term_fill_capabilities(TERM_REC *term)
 {
 	int i, ival;
@@ -496,7 +510,7 @@ void terminfo_setup_colors(TERM_REC *term, int force)
 	}
 }
 
-static void terminfo_input_init(TERM_REC *term)
+static void terminfo_input_init0(TERM_REC *term)
 {
 	tcgetattr(fileno(term->in), &term->old_tio);
 	memcpy(&term->tio, &term->old_tio, sizeof(term->tio));
@@ -518,8 +532,11 @@ static void terminfo_input_init(TERM_REC *term)
 	term->tio.c_cc[VSUSP] = _POSIX_VDISABLE;
 #endif
 
-        tcsetattr(fileno(term->in), TCSADRAIN, &term->tio);
+}
 
+static void terminfo_input_init(TERM_REC *term)
+{
+        tcsetattr(fileno(term->in), TCSADRAIN, &term->tio);
 }
 
 static void terminfo_input_deinit(TERM_REC *term)
@@ -532,8 +549,11 @@ void terminfo_cont(TERM_REC *term)
 	if (term->TI_smcup)
 		tput(tparm(term->TI_smcup));
 
-	if (term->TI_smkx)
-		tput(tparm(term->TI_smkx));
+	if (term->appkey_enabled)
+		terminfo_set_appkey_mode(term, TRUE);
+
+	if (term->bracketed_paste_enabled)
+		term_dec_set_bracketed_paste_mode(TRUE);
 
         terminfo_input_init(term);
 }
@@ -545,12 +565,15 @@ void terminfo_stop(TERM_REC *term)
         /* move cursor to bottom of the screen */
 	terminfo_move(0, term->height-1);
 
+	if (term->bracketed_paste_enabled)
+		term_dec_set_bracketed_paste_mode(FALSE);
+
 	/* stop cup-mode */
 	if (term->TI_rmcup)
 		tput(tparm(term->TI_rmcup));
 
-	if (term->TI_rmkx)
-		tput(tparm(term->TI_rmkx));
+	if (term->appkey_enabled)
+		terminfo_set_appkey_mode(term, FALSE);
 
         /* reset input settings */
 	terminfo_input_deinit(term);
@@ -673,8 +696,27 @@ static int term_setup(TERM_REC *term)
 	term->beep = term->TI_bel ? _beep : _ignore;
 
 	terminfo_setup_colors(term, FALSE);
+	terminfo_input_init0(term);
         terminfo_cont(term);
         return 1;
+}
+
+void term_set_appkey_mode(int enable)
+{
+	if (current_term->appkey_enabled == enable)
+		return;
+
+	current_term->appkey_enabled = enable;
+	terminfo_set_appkey_mode(current_term, enable);
+}
+
+void term_set_bracketed_paste_mode(int enable)
+{
+	if (current_term->bracketed_paste_enabled == enable)
+		return;
+
+	current_term->bracketed_paste_enabled = enable;
+	term_dec_set_bracketed_paste_mode(enable);
 }
 
 TERM_REC *terminfo_core_init(FILE *in, FILE *out)
