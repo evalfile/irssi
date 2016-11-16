@@ -1,4 +1,4 @@
-AC_INIT(irssi, 0.8.20-head)
+AC_INIT(irssi, 0.8.21-head)
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_AUX_DIR(build-aux)
 AC_PREREQ(2.50)
@@ -61,15 +61,6 @@ AC_ARG_WITH(proxy,
 	fi,
 	want_irssiproxy=no)
 
-AC_ARG_WITH(terminfo,
-[  --without-terminfo      Use curses backend instead of terminfo],
-	if test x$withval = xno; then
-		want_terminfo=no
-	else
-		want_terminfo=yes
-	fi,
-	want_terminfo=yes)
-
 AC_ARG_WITH(modules,
 [  --with-modules          Specify what modules to build in binary],
 	if test x$withval != xyes -a x$withval != xno; then
@@ -79,7 +70,6 @@ AC_ARG_WITH(modules,
 if test "x$prefix" != "xNONE"; then
 	prefix=`eval echo $prefix`
 	PERL_MM_PARAMS="INSTALLDIRS=perl INSTALL_BASE=$prefix"
-	perl_library_dir="PERL_USE_LIB"
 	perl_set_use_lib=yes
 
 	perl_prefix_note=yes
@@ -97,30 +87,35 @@ AC_ARG_WITH(perl-staticlib,
 
 
 AC_ARG_WITH(perl-lib,
-[  --with-perl-lib=[site|vendor|DIR]  Specify where to install the
+[  --with-perl-lib=[perl|site|vendor|DIR]  Specify where to install the
                           Perl libraries for irssi, default is site],
 	if test "x$withval" = xyes; then
 		want_perl=yes
 	elif test "x$withval" = xno; then
 		want_perl=no
+	elif test "x$withval" = xperl; then
+		want_perl=yes
+		perl_prefix_note=no
+		PERL_MM_PARAMS="INSTALLDIRS=perl"
+		perl_set_use_lib=no
 	elif test "x$withval" = xsite; then
 		want_perl=yes
 		perl_prefix_note=no
 		PERL_MM_PARAMS=""
+		perl_set_use_lib=no
 	elif test "x$withval" = xvendor; then
 		want_perl=yes
 		perl_prefix_note=no
 		if test -z "`$perlpath -v|grep '5\.0'`"; then
 			PERL_MM_PARAMS="INSTALLDIRS=vendor"
 		else
-			PERL_MM_PARAMS="INSTALLDIRS=perl PREFIX=`perl -e 'use Config; print $Config{prefix}'`"
+			PERL_MM_PARAMS="INSTALLDIRS=perl PREFIX=`$perlpath -e 'use Config; print $Config{prefix}'`"
 		fi
-		perl_library_dir="(vendor default - `$perlpath -e 'use Config; print $Config{archlib}'`)"
+		perl_set_use_lib=no
 	else
 		want_perl=yes
 		perl_prefix_note=no
 		PERL_MM_PARAMS="INSTALLDIRS=perl LIB=$withval"
-		perl_library_dir="PERL_USE_LIB"
 		perl_set_use_lib=yes
 	fi,
 	want_perl=yes)
@@ -140,15 +135,6 @@ AC_ARG_WITH(perl,
 	fi,
 	want_perl=static)
 
-AC_ARG_ENABLE(dane,
-[  --enable-dane           Enable DANE support],
-	if test x$enableval = xno ; then
-		want_dane=no
-	else
-		want_dane=yes
-	fi,
-	want_dane=no)
-
 AC_ARG_ENABLE(true-color,
 [  --enable-true-color     Build with true color support in terminal],
 	if test x$enableval = xno ; then
@@ -157,14 +143,6 @@ AC_ARG_ENABLE(true-color,
 		want_truecolor=yes
 	fi,
 	want_truecolor=no)
-
-dnl **
-dnl ** SSL Library checks (OpenSSL)
-dnl **
-
-AC_ARG_ENABLE(ssl,
-[  --disable-ssl           Disable Secure Sockets Layer support],,
-	enable_ssl=yes)
 
 dnl **
 dnl ** just some generic stuff...
@@ -244,6 +222,11 @@ if test "x$want_socks" = "xyes"; then
 fi
 
 dnl **
+dnl ** OpenSSL checks
+dnl **
+AC_CHECK_LIB([ssl], [SSL_library_init])
+
+dnl **
 dnl ** fe-text checks
 dnl **
 
@@ -284,71 +267,25 @@ if test -z "$GLIB_LIBS"; then
   AC_ERROR([GLIB is required to build irssi.])
 fi
 
-LIBS="$LIBS $GLIB_LIBS"
-
-have_openssl=no
-if test "$enable_ssl" = "yes"; then
-  PKG_CHECK_MODULES(SSL, openssl, :, :)
-  if test "$SSL_LIBS"; then
-    CFLAGS="$CFLAGS $SSL_CFLAGS"
-    have_openssl=yes
-  else
-    AC_CHECK_LIB(ssl, SSL_read, [
-      AC_CHECK_HEADERS(openssl/ssl.h openssl/err.h, [
-	SSL_LIBS="-lssl -lcrypto"
-	have_openssl=yes
-      ])
-    ],, -lcrypto)
-  fi
-  if test "$have_openssl" = "yes"; then
-    AC_DEFINE(HAVE_OPENSSL,, Build with OpenSSL support)
-    LIBS="$LIBS $SSL_LIBS"
-  fi
-fi
+LIBS="$LIBS $GLIB_LIBS -lssl -lcrypto"
 
 dnl **
 dnl ** curses checks
 dnl **
 
-if test "x$want_textui" = "xyes"; then
-	AC_CHECK_CURSES
+if test "x$want_textui" != "xno"; then
 
-	TEXTUI_LIBS="$CURSES_LIBS"
-	if test "x$has_curses" = "xtrue"; then
-		old_libs=$LIBS
-		LIBS="$LIBS $CURSES_LIBS"
-		if test $want_terminfo = no; then
-			AC_CHECK_FUNC(use_default_colors, AC_DEFINE(HAVE_NCURSES_USE_DEFAULT_COLORS))
-			AC_CHECK_FUNC(idcok, AC_DEFINE(HAVE_CURSES_IDCOK))
-			AC_CHECK_FUNC(resizeterm, AC_DEFINE(HAVE_CURSES_RESIZETERM))
-			AC_CHECK_FUNC(wresize, AC_DEFINE(HAVE_CURSES_WRESIZE))
-		fi
-		AC_CHECK_FUNC(setupterm,, [
-			want_termcap=yes
-		])
-		LIBS=$old_libs
-	else
-		AC_CHECK_LIB(tinfo, setupterm, [
-		  TEXTUI_LIBS="-ltinfo"
-		  want_terminfo=yes
-		], AC_CHECK_LIB(termlib, tgetent, [
-		  TEXTUI_LIBS="-ltermlib"
-		  want_termcap=yes
-		], AC_CHECK_LIB(termcap, tgetent, [
-		  TEXTUI_LIBS="-ltermcap"
-		  want_termcap=yes
-		], [
-		  AC_ERROR(Terminfo/termcap not found - install libncurses-dev or ncurses-devel package)
-		  want_textui=no
-		])))
-	fi
+	TEXTUI_NO_LIBS="$LIBS"
+	LIBS=
+	AC_SEARCH_LIBS([setupterm], [tinfo ncursesw ncurses], [want_textui=yes], [
+		AC_ERROR(Terminfo not found - install libncurses-dev or ncurses-devel package)
+		want_textui="no, Terminfo not found"
+	])
+
+	TEXTUI_LIBS="$LIBS"
 	AC_SUBST(TEXTUI_LIBS)
+	LIBS="$TEXTUI_NO_LIBS"
 
-	if test "x$want_termcap" = "xyes"; then
-		AC_CHECK_FUNC(tparm,, need_tparm=yes)
-	else
-		AC_DEFINE(HAVE_TERMINFO)
-	fi
 fi
 
 dnl **
@@ -371,7 +308,7 @@ if test "$want_perl" != "no"; then
 		dnl * complain about them. Normally there's only few options
 		dnl * that we want to keep:
 		dnl * -Ddefine -Uundef -I/path -fopt -mopt
-		PERL_CFLAGS=`echo $PERL_CFLAGS | $perlpath -pe 's/^(.* )?-[^DUIfm][^ ]+/\1/g; s/^(.* )?\+[^ ]+/\1/g'`
+		PERL_CFLAGS=`echo $PERL_CFLAGS | $perlpath -pe 's/^(.* )?-@<:@^DUIfm@:>@@<:@^ @:>@+/\1/g; s/^(.* )?\+@<:@^ @:>@+/\1/g'`
 
 		PERL_EXTRA_OPTS="CCCDLFLAGS=\"-fPIC\""
 		AC_SUBST(PERL_EXTRA_OPTS)
@@ -455,13 +392,37 @@ if test "$want_perl" != "no"; then
 			PERL_STATIC_LIBS=0
 		fi
 
+		# remove any prefix from PERL_MM_OPT
+		PERL_MM_OPT=`perl -MText::ParseWords -e 'sub qu{$_=shift;s{^(.*?)=(.*)$}{($a,$b)=($1,$2);$b=~s/"/\\\\"/g;qq{$a="$b"}}ge if /@<:@\s"@:>@/;$_} local $,=" "; print map qu($_), grep !/^(INSTALL_BASE|PREFIX)=/, shellwords(@ARGV)' "$PERL_MM_OPT"`
 		# figure out the correct @INC path - we'll need to do this
 		# through MakeMaker since it's difficult to get it right
 		# otherwise.
+		$perlpath -MExtUtils::MakeMaker -e 'WriteMakefile(NAME => "test", MAKEFILE => "Makefile.test", FIRST_MAKEFILE => "/dev/null", NO_META => 1, NO_MYMETA => 1);' $PERL_MM_PARAMS >/dev/null
+		echo 'show-INSTALLDIRS:' >> Makefile.test
+		echo '	@echo $(INSTALLDIRS)' >> Makefile.test
+		perl_INSTALLDIRS=`$am_make -s -f Makefile.test show-INSTALLDIRS`
+		if test "x$perl_INSTALLDIRS" = "xsite"; then
+			perl_library_dir="site default"
+			perl_INSTALL_VAR=INSTALLSITEARCH
+		elif test "x$perl_INSTALLDIRS" = "xvendor"; then
+			perl_library_dir="vendor default"
+			perl_INSTALL_VAR=INSTALLVENDORARCH
+		else
+			perl_library_dir="module default"
+			perl_INSTALL_VAR=INSTALLARCHLIB
+		fi
+		echo 'show-ARCHLIB:' >> Makefile.test
+		echo '	@echo $('"$perl_INSTALL_VAR"')' >> Makefile.test
+		perl_use_lib=`$am_make -s -f Makefile.test show-ARCHLIB`
+		rm -f Makefile.test
 		if test "x$perl_set_use_lib" = "xyes"; then
-			perl -e 'use ExtUtils::MakeMaker; WriteMakefile("NAME" => "test", "MAKEFILE" => "Makefile.test");' $PERL_MM_PARAMS >/dev/null
-			PERL_USE_LIB=`perl -e 'open(F, "Makefile.test"); while (<F>) { chomp; if (/^(\w+) = (.*$)/) { $keys{$1} = $2; } }; $key = $keys{INSTALLARCHLIB}; while ($key =~ /\\$\((\w+)\)/) { $value = $keys{$1}; $key =~ s/\\$\($1\)/$value/; }; print $key;'`
-			rm -f Makefile.test
+			if $perlpath -e 'exit ! grep $_ eq $ARGV@<:@0@:>@, grep /^\//, @INC' "$perl_use_lib"; then
+				perl_library_dir="other path in @INC"
+				perl_set_use_lib=no
+			else
+				perl_library_dir="prepends to @INC with /set perl_use_lib"
+				PERL_USE_LIB="$perl_use_lib"
+			fi
 		fi
 
 		AC_SUBST(perl_module_lib)
@@ -477,6 +438,7 @@ if test "$want_perl" != "no"; then
 		AC_SUBST(PERL_CFLAGS)
 
 		AC_SUBST(PERL_USE_LIB)
+		AC_SUBST(PERL_MM_OPT)
 		AC_SUBST(PERL_MM_PARAMS)
 		AC_SUBST(PERL_STATIC_LIBS)
 	fi
@@ -487,8 +449,6 @@ AM_CONDITIONAL(BUILD_TEXTUI, test "$want_textui" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIBOT, test "$want_irssibot" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIPROXY, test "$want_irssiproxy" = "yes")
 AM_CONDITIONAL(HAVE_PERL, test "$want_perl" != "no")
-AM_CONDITIONAL(NEED_TPARM, test "$need_tparm" = "yes")
-AM_CONDITIONAL(USE_CURSES, test "$want_terminfo" != "yes" -a "$want_termcap" != "yes")
 
 # move LIBS to PROG_LIBS so they're not tried to be used when linking eg. perl libraries
 PROG_LIBS=$LIBS
@@ -568,28 +528,19 @@ COMMON_LIBS="$FE_COMMON_LIBS $COMMON_NOUI_LIBS"
 AC_SUBST(COMMON_NOUI_LIBS)
 AC_SUBST(COMMON_LIBS)
 
-have_dane=no
-if test "x$want_dane" = "xyes"; then
-	AC_MSG_CHECKING([for DANE])
-	AC_CHECK_LIB(val-threads, val_getdaneinfo,
-	[
-		LIBS="$LIBS -lval-threads -lsres"
-		AC_DEFINE([HAVE_DANE], [], [DANE support])
-		have_dane=yes
-	], [], [-lssl -lcrypto -lsres -lpthread])
-
-	if test x$have_dane = "xyes" ; then
-		if test x$have_openssl = "xno" ; then
-			AC_ERROR([SSL is required to build Irssi with DANE support enabled.])
-		fi
-	fi
-fi
-
-if test "x$want_truecolor" = "xyes" -a "x$want_termcap" != "xyes" -a "x$want_terminfo" = "xyes" ; then
+if test "x$want_truecolor" = "xyes"; then
 	AC_DEFINE([TERM_TRUECOLOR], [], [true color support in terminal])
 else
 	want_truecolor=no
 fi
+
+AH_TEMPLATE(HAVE_GMODULE)
+AH_TEMPLATE(HAVE_SOCKS_H, [misc..])
+AH_TEMPLATE(HAVE_STATIC_PERL)
+AH_TEMPLATE(PRIuUOFF_T, [printf()-format for uoff_t, eg. "u" or "lu" or "llu"])
+AH_TEMPLATE(UOFF_T_INT, [What type should be used for uoff_t])
+AH_TEMPLATE(UOFF_T_LONG)
+AH_TEMPLATE(UOFF_T_LONG_LONG)
 
 AC_CONFIG_FILES([
 Makefile
@@ -643,16 +594,7 @@ fi
 
 echo
 
-if test "x$want_textui" = "xno"; then
-	text=no
-elif test "x$want_termcap" = "xyes"; then
-	text="yes, using termcap"
-elif test "x$want_terminfo" = "xyes"; then
-	text="yes, using terminfo"
-else
-	text="yes, using curses"
-fi
-echo "Building text frontend ........... : $text"
+echo "Building text frontend ........... : $want_textui"
 echo "Building irssi bot ............... : $want_irssibot"
 echo "Building irssi proxy ............. : $want_irssiproxy"
 if test "x$have_gmodule" = "xyes"; then
@@ -692,13 +634,7 @@ if test "x$want_perl" != "xno" -a "x$perl_mod_error" != "x"; then
 fi
 
 if test "x$want_perl" != "xno"; then
-	if test "$perl_library_dir" = "PERL_USE_LIB"; then
-		perl_library_dir=$PERL_USE_LIB
-	fi
-	if test -z "$perl_library_dir"; then
-		perl_library_dir="(site default - `$perlpath -e 'use Config; print $Config{sitearch}'`)"
-	fi
-	echo "Perl library directory ........... : $perl_library_dir"
+	echo "Perl library directory ........... : ($perl_library_dir - $perl_use_lib)"
 	if test "x$perl_prefix_note" = "xyes"; then
 		echo "  - NOTE: This was automatically set to the same directory you gave with"
 		echo "  --prefix. If you want the perl libraries to install to their 'correct'"
@@ -710,18 +646,7 @@ echo "Install prefix ................... : $prefix"
 
 echo
 
-echo "Building with SSL support ........ : $have_openssl"
-if test "x$have_openssl" = "xno" -a "x$enable_ssl" = "xyes"; then
-  if test -f /etc/debian_version; then
-    echo " - Try: sudo apt-get install libssl-dev"
-  elif test -f /etc/redhat-release; then
-    echo " - Try installing openssl-devel"
-  else
-    echo " - Try installing OpenSSL development headers"
-  fi
-fi
 echo "Building with 64bit DCC support .. : $offt_64bit"
-echo "Building with DANE support ....... : $have_dane"
 echo "Building with true color support.. : $want_truecolor"
 
 echo

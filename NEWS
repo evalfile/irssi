@@ -1,7 +1,77 @@
-v0.8.20-head 2016-xx-xx  The Irssi team <staff@irssi.org>
+v0.8.21-head 2016-xx-xx  The Irssi team <staff@irssi.org>
 	* Removed --disable-ipv6
+	* /connect Network now aborts with an error if no servers have been
+	  added to that network.
+	* /dcc commands now use quotes around spaces consistently.
 	+ irssiproxy can now forward all tags through a single port.
+	+ irssiproxy can also listen on unix sockets.
 	+ send channel -botcmds immediately when no mask is specified (#175).
+	+ the kill buffer now remembers consecutive kills.
+	  New bindings were added: yank_next_cutbuffer and append_next_kill
+	+ connections will avoid looking up IPv6 addresses if the machine does
+	  not have an IPv6 address assigned (exact behaviour is implementation
+	  defined).
+	+ Fix potential crash if scripts insert undef values into the completion
+	  list.
+	+ Paste warning is now also shown on pasting overlong lines.
+	+ autolog_ignore_targets and activity_hide_targets learn a new syntax
+	      tag/* and * to ignore whole networks or everything.
+	+ /hilight got a -matchcase flag to hilight case sensitively (#421).
+	+ Always build irssi with TLS support.
+	+ Rename SSL to TLS in the code and add -tls_* versions of the -ssl_*
+	  options to /CONNECT and /SERVER, but make sure the -ssl_* options continue
+	  to work.
+	+ Use TLS for Freenode, EFnet, EsperNet, OFTC, Rizon, and IRC6 in the default
+	  configuration.
+	+ Display TLS connection information upon connect. You can disable this by
+	  setting tls_verbose_connect to FALSE.
+	+ Add -tls_pinned_cert and -tls_pinned_pubkey for x509 and public key pinning.
+
+	  The values needed for -tls_pinned_cert and -tls_pinned_pubkey is shown
+	  when connecting to a TLS enabled IRC server, but you can also find the
+	  values like this: Start by downloading the certificate from a given IRC
+	  server:
+
+	      $ openssl s_client -connect chat.freenode.net:6697 < /dev/null 2>/dev/null | \
+	        openssl x509 > freenode.cert
+
+	  Find the value for -tls_pinned_cert:
+
+	      $ openssl x509 -in freenode.cert -fingerprint -sha256 -noout
+
+	  Find the value for -tls_pinned_pubkey:
+
+	      $ openssl x509 -in freenode.cert -pubkey -noout | \
+	        openssl pkey -pubin -outform der | \
+	        openssl dgst -sha256 -c | \
+	        tr a-z A-Z
+
+	+ Remove support for DANE validation of TLS certificates.
+
+	  There wasn't enough support in the IRC community to push for this on the
+	  majority of bigger IRC networks. If you believe this should be
+	  reintroduced into irssi, then please come up with an implementation that
+	  does not rely on the libval library. It is causing a lot of troubles for
+	  our downstream maintainers.
+
+	- IP addresses are no longer stored when resolve_reverse_lookup is
+	  used.
+	- /names and $[...] now uses utf8 string operations (#40, #411).
+	- Removed broken support for curses.
+
+v0.8.20 2016-09-16  The Irssi team <staff@irssi.org>
+	- Correct the name of an emitted sasl signal (#484)
+	- Correct the prototype for the 'message private' signal (#515)
+	- Corrections in away and hilight help text (#477, #518)
+	- /squery and /servlist commands have been restored.
+	- Where Irssi would previously only report "System error" on connect,
+	  it will now try harder to retrieve the system error message.
+	- Fixed issue with +channels not working properly (#533)
+	- Fixed crash in optchan when item has no server (#485)
+	- Fixed random remote crash in the nicklist handling (#529)
+	- Fixed remote crash due to incorrect bounds checking on
+	  formats, reported by Gabriel Campana and Adrien Guinet from
+	  Quarkslab.
 
 v0.8.19 2016-03-23  The Irssi team <staff@irssi.org>
 	- Fixed regression when joining and parting channels on IRCnet (#435)

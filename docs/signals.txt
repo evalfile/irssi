@@ -56,9 +56,7 @@ modules.c:
  "module error", int error, char *text, char *rootmodule, char *submodule
 
 network-openssl.c:
- "tlsa available", SERVER_REC
- "tlsa verification success", SERVER_REC
- "tlsa verification failed", SERVER_REC
+ "tls handshake finished", SERVER_REC, TLS_REC
 
 nicklist.c:
  "nicklist new", CHANNEL_REC, NICK_REC
@@ -260,7 +258,7 @@ fe-exec.c:
 
 fe-messages.c:
  "message public", SERVER_REC, char *msg, char *nick, char *address, char *target
- "message private", SERVER_REC, char *msg, char *nick, char *address
+ "message private", SERVER_REC, char *msg, char *nick, char *address, char *target
  "message own_public", SERVER_REC, char *msg, char *target
  "message own_private", SERVER_REC, char *msg, char *target, char *orig_target
  "message join", SERVER_REC, char *channel, char *nick, char *address

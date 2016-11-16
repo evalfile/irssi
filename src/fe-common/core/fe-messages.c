@@ -175,6 +175,7 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
 	int for_me, print_channel, level;
 	char *nickmode, *color, *freemsg = NULL;
 	HILIGHT_REC *hilight;
+	TEXT_DEST_REC dest;
 
 	/* NOTE: this may return NULL if some channel is just closed with
 	   /WINDOW CLOSE and server still sends the few last messages */
@@ -214,7 +215,6 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
 	if (printnick == NULL)
 		printnick = nick;
 
-	TEXT_DEST_REC dest;
 	format_create_dest(&dest, server, target, level, NULL);
 	dest.address = address;
 	dest.nick = nick;
@@ -396,8 +396,9 @@ static void sig_message_quit(SERVER_REC *server, const char *nick,
 	count = 0; windows = NULL;
 	chans = g_string_new(NULL);
 	for (tmp = server->channels; tmp != NULL; tmp = tmp->next) {
+		CHANNEL_REC *rec;
 		level = MSGLEVEL_QUITS;
-		CHANNEL_REC *rec = tmp->data;
+		rec = tmp->data;
 
 		if (!nicklist_find(rec, nick))
 			continue;
@@ -602,9 +603,6 @@ static void sig_nicklist_new(CHANNEL_REC *channel, NICK_REC *nick)
 	char *nickhost, *p;
 	int n;
 
-	if (nick->host == NULL)
-                return;
-
 	firstnick = g_hash_table_lookup(channel->nicks, nick->nick);
 	if (firstnick->next == NULL)
 		return;
@@ -616,6 +614,9 @@ static void sig_nicklist_new(CHANNEL_REC *channel, NICK_REC *nick)
 		if (nick == NULL)
                         return; /* nope, we have it */
 	}
+
+	if (nick->host == NULL)
+                return;
 
 	/* identical nick already exists, have to change it somehow.. */
 	p = strchr(nick->host, '@');

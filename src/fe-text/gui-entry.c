@@ -366,22 +366,8 @@ static int scrlen_str(const char *str)
 	char *stripped;
 	g_return_val_if_fail(str != NULL, 0);
 
-	str = stripped = strip_codes(str);
-	if (is_utf8() && g_utf8_validate(str, -1, NULL)) {
-
-		while (*str != '\0') {
-			gunichar c;
-
-			c = g_utf8_get_char(str);
-			str = g_utf8_next_char(str);
-
-			len += unichar_isprint(c) ? mk_wcwidth(c) : 1;
-		}
-
-	} else {
-		len = strlen(str);
-	}
-
+	stripped = strip_codes(str);
+	len = string_width(stripped, -1);
 	g_free(stripped);
 	return len;
 }
@@ -554,6 +540,7 @@ void gui_entry_insert_char(GUI_ENTRY_REC *entry, unichar chr)
 
 char *gui_entry_get_cutbuffer(GUI_ENTRY_REC *entry)
 {
+	GUI_ENTRY_CUTBUFFER_REC *tmp;
 	char *buf;
         int i;
 
@@ -562,7 +549,7 @@ char *gui_entry_get_cutbuffer(GUI_ENTRY_REC *entry)
 	if (entry->kill_ring == NULL || entry->kill_ring->data == NULL)
 		return NULL;
 
-	GUI_ENTRY_CUTBUFFER_REC *tmp = entry->kill_ring->data;
+	tmp = entry->kill_ring->data;
 
 	if (tmp->cutbuffer == NULL)
                 return NULL;
@@ -582,12 +569,14 @@ char *gui_entry_get_cutbuffer(GUI_ENTRY_REC *entry)
 
 char *gui_entry_get_next_cutbuffer(GUI_ENTRY_REC *entry)
 {
+	GUI_ENTRY_CUTBUFFER_REC *tmp;
+
 	g_return_val_if_fail(entry != NULL, NULL);
 
 	if (entry->kill_ring == NULL)
 		return NULL;
 
-	GUI_ENTRY_CUTBUFFER_REC *tmp = entry->kill_ring->data;
+	tmp = entry->kill_ring->data;
 
 	entry->kill_ring = g_slist_remove(entry->kill_ring, tmp);
 	entry->kill_ring = g_slist_append(entry->kill_ring, tmp);
@@ -608,7 +597,7 @@ void gui_entry_erase_to(GUI_ENTRY_REC *entry, int pos, CUTBUFFER_UPDATE_OP updat
 
 static GUI_ENTRY_CUTBUFFER_REC *get_cutbuffer_rec(GUI_ENTRY_REC *entry, CUTBUFFER_UPDATE_OP update_cutbuffer)
 {
-	GUI_ENTRY_CUTBUFFER_REC *tmp = NULL;
+	GUI_ENTRY_CUTBUFFER_REC *tmp;
 
 	g_return_val_if_fail(entry != NULL, NULL);
 
@@ -666,7 +655,7 @@ void gui_entry_erase(GUI_ENTRY_REC *entry, int size, CUTBUFFER_UPDATE_OP update_
 				tmp->cutbuffer = g_new(unichar, cutbuffer_new_size+1);
 				memcpy(tmp->cutbuffer, tmpcutbuffer,
 				       tmp->cutbuffer_len * sizeof(unichar));
-				memcpy(tmp->cutbuffer + tmp->cutbuffer_len * sizeof(unichar),
+				memcpy(tmp->cutbuffer + tmp->cutbuffer_len,
 				       entry->text + entry->pos - size, size * sizeof(unichar));
 
 				tmp->cutbuffer_len = cutbuffer_new_size;

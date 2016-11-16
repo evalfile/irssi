@@ -44,6 +44,9 @@ libcore_a_SOURCES = \
 	settings.c \
 	signals.c \
 	special-vars.c \
+	utf8.c \
+	wcwidth.c \
+	tls.c \
 	write-buffer.c
 
 structure_headers = \
@@ -93,6 +96,8 @@ pkginc_core_HEADERS = \
 	settings.h \
 	signals.h \
 	special-vars.h \
+	utf8.h \
 	window-item-def.h \
+	tls.h \
 	write-buffer.h \
 	$(structure_headers)
