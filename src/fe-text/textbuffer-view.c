@@ -146,6 +146,9 @@ static void update_cmd_color(unsigned char cmd, int *color)
 	case LINE_CMD_ITALIC:
 		*color ^= ATTR_ITALIC;
 		break;
+	case LINE_CMD_MONOSPACE:
+		/* ignored */
+		break;
 	case LINE_CMD_COLOR0:
 		*color &= BGATTR;
 		*color &= ~ATTR_FGCOLOR24;
@@ -307,7 +310,7 @@ view_update_line_cache(TEXT_BUFFER_VIEW_REC *view, LINE_REC *line)
 			continue;
 		}
 
-		if (!view->utf8 && char_width > 1) {
+		if (view->break_wide && char_width > 1) {
 			last_space = xpos;
 			last_space_ptr = next_ptr;
 			last_color = color; last_fg24 = fg24; last_bg24 = bg24;
@@ -663,6 +666,16 @@ void textbuffer_view_set_default_indent(TEXT_BUFFER_VIEW_REC *view,
 		view->longword_noindent = longword_noindent;
 
 	view->default_indent_func = indent_func;
+}
+
+/* Enable breaking of wide chars */
+void textbuffer_view_set_break_wide(TEXT_BUFFER_VIEW_REC *view,
+				    gboolean break_wide)
+{
+	if (view->break_wide != break_wide) {
+		view->break_wide = break_wide;
+		view_reset_cache(view);
+	}
 }
 
 static void view_unregister_indent_func(TEXT_BUFFER_VIEW_REC *view,

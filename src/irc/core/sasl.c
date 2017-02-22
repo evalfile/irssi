@@ -48,6 +48,7 @@ static gboolean sasl_timeout(IRC_SERVER_REC *server)
 	cap_finish_negotiation(server);
 
 	server->sasl_timeout = 0;
+	server->sasl_success = FALSE;
 
 	signal_emit("server sasl failure", 2, server, "The authentication timed out");
 
@@ -84,6 +85,8 @@ static void sasl_fail(IRC_SERVER_REC *server, const char *data, const char *from
 
 	params = event_get_params(data, 2, NULL, &error);
 
+	server->sasl_success = FALSE;
+
 	signal_emit("server sasl failure", 2, server, error);
 
 	/* Terminate the negotiation */
@@ -99,6 +102,8 @@ static void sasl_already(IRC_SERVER_REC *server, const char *data, const char *f
 		server->sasl_timeout = 0;
 	}
 
+	server->sasl_success = TRUE;
+
 	signal_emit("server sasl success", 1, server);
 
 	/* We're already authenticated, do nothing */
@@ -111,6 +116,8 @@ static void sasl_success(IRC_SERVER_REC *server, const char *data, const char *f
 		g_source_remove(server->sasl_timeout);
 		server->sasl_timeout = 0;
 	}
+
+	server->sasl_success = TRUE;
 
 	signal_emit("server sasl success", 1, server);
 
@@ -167,10 +174,16 @@ static gboolean sasl_reassemble_incoming(IRC_SERVER_REC *server, const char *fra
 		*decoded = g_string_new_len("", 0);
 	} else {
 		gsize dec_len;
-		gchar *tmp;
+		gint state = 0;
+		guint save = 0;
 
-		tmp = (gchar *) g_base64_decode(enc_req->str, &dec_len);
-		*decoded = g_string_new_len(tmp, dec_len);
+		/* Since we're not going to use the enc_req GString anymore we
+		 * can perform the decoding in place. */
+		dec_len = g_base64_decode_step(enc_req->str, enc_req->len,
+					       (guchar *)enc_req->str,
+					       &state, &save);
+		/* A copy of the data is made when the GString is created. */
+		*decoded = g_string_new_len(enc_req->str, dec_len);
 	}
 
 	g_string_free(enc_req, TRUE);

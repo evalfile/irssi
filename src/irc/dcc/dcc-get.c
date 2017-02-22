@@ -30,6 +30,8 @@
 #include "dcc-get.h"
 #include "dcc-send.h"
 
+static char *dcc_get_recv_buffer;
+
 GET_DCC_REC *dcc_get_create(IRC_SERVER_REC *server, CHAT_DCC_REC *chat,
 				   const char *nick, const char *arg)
 {
@@ -139,14 +141,20 @@ static void sig_dccget_send(GET_DCC_REC *dcc)
                 dcc_get_send_received(dcc);
 }
 
+#define DCC_GET_RECV_BUFFER_SIZE 32768
+
 /* input function: DCC GET received data */
 static void sig_dccget_receive(GET_DCC_REC *dcc)
 {
-        char buffer[512];
 	int ret;
 
+	if (dcc_get_recv_buffer == NULL) {
+		dcc_get_recv_buffer = g_malloc(DCC_GET_RECV_BUFFER_SIZE);
+	}
+
 	for (;;) {
-		ret = net_receive(dcc->handle, buffer, sizeof(buffer));
+		ret = net_receive(dcc->handle, dcc_get_recv_buffer,
+				  DCC_GET_RECV_BUFFER_SIZE);
 		if (ret == 0) break;
 
 		if (ret < 0) {
@@ -156,7 +164,7 @@ static void sig_dccget_receive(GET_DCC_REC *dcc)
 			return;
 		}
 
-		if (write(dcc->fhandle, buffer, ret) != ret) {
+		if (write(dcc->fhandle, dcc_get_recv_buffer, ret) != ret) {
 			/* most probably out of disk space */
 			signal_emit("dcc error write", 2,
 				    dcc, g_strerror(errno));
@@ -839,4 +847,5 @@ void dcc_get_deinit(void)
 	signal_remove("ctcp msg dcc send", (SIGNAL_FUNC) ctcp_msg_dcc_send);
 	signal_remove("ctcp msg dcc ssend", (SIGNAL_FUNC) ctcp_msg_dcc_ssend);
 	command_unbind("dcc get", (SIGNAL_FUNC) cmd_dcc_get);
+	g_free_and_null(dcc_get_recv_buffer);
 }

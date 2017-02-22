@@ -20,6 +20,7 @@
 
 #include "module.h"
 #include "network.h"
+#include "net-sendbuffer.h"
 #include "misc.h"
 #include "servers.h"
 #include "signals.h"
@@ -31,6 +32,17 @@
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/err.h>
+
+/* OpenSSL 1.1.0 introduced some backward-incompatible changes to the api */
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+/* The two functions below could be already defined if OPENSSL_API_COMPAT is
+ * below the 1.1.0 version so let's do a clean start */
+#undef  X509_get_notBefore
+#undef  X509_get_notAfter
+#define X509_get_notBefore(x)     X509_get0_notBefore(x)
+#define X509_get_notAfter(x)      X509_get0_notAfter(x)
+#define ASN1_STRING_data(x)       ASN1_STRING_get0_data(x)
+#endif
 
 /* ssl i/o channel object */
 typedef struct
@@ -352,13 +364,19 @@ static GIOFuncs irssi_ssl_channel_funcs = {
 
 static gboolean irssi_ssl_init(void)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+	if (!OPENSSL_init_ssl(OPENSSL_INIT_SSL_DEFAULT, NULL)) {
+		g_error("Could not initialize OpenSSL");
+		return FALSE;
+	}
+#else
 	SSL_library_init();
 	SSL_load_error_strings();
 	OpenSSL_add_all_algorithms();
+#endif
 	ssl_inited = TRUE;
 
 	return TRUE;
-
 }
 
 static int get_pem_password_callback(char *buffer, int max_length, int rwflag, void *pass)
@@ -420,16 +438,38 @@ static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, int port, SERVER_
 
 	if (mycert && *mycert) {
 		char *scert = NULL, *spkey = NULL;
+		FILE *fp;
 		scert = convert_home(mycert);
 		if (mypkey && *mypkey)
 			spkey = convert_home(mypkey);
-		ERR_clear_error();
-		if (! SSL_CTX_use_certificate_file(ctx, scert, SSL_FILETYPE_PEM))
-			g_warning("Loading of client certificate '%s' failed: %s", mycert, ERR_reason_error_string(ERR_get_error()));
-		else if (! SSL_CTX_use_PrivateKey_file(ctx, spkey ? spkey : scert, SSL_FILETYPE_PEM))
-			g_warning("Loading of private key '%s' failed: %s", mypkey ? mypkey : mycert, ERR_reason_error_string(ERR_get_error()));
-		else if (! SSL_CTX_check_private_key(ctx))
-			g_warning("Private key does not match the certificate");
+
+		if ((fp = fopen(scert, "r"))) {
+			X509 *cert;
+			/* Let's parse the certificate by hand instead of using
+			 * SSL_CTX_use_certificate_file so that we can validate
+			 * some parts of it. */
+			cert = PEM_read_X509(fp, NULL, get_pem_password_callback, (void *)mypass);
+			if (cert != NULL) {
+				/* Only the expiration date is checked right now */
+				if (X509_cmp_current_time(X509_get_notAfter(cert))  <= 0 ||
+				    X509_cmp_current_time(X509_get_notBefore(cert)) >= 0)
+					g_warning("The client certificate is expired");
+
+				ERR_clear_error();
+				if (! SSL_CTX_use_certificate(ctx, cert))
+					g_warning("Loading of client certificate '%s' failed: %s", mycert, ERR_reason_error_string(ERR_get_error()));
+				else if (! SSL_CTX_use_PrivateKey_file(ctx, spkey ? spkey : scert, SSL_FILETYPE_PEM))
+					g_warning("Loading of private key '%s' failed: %s", mypkey ? mypkey : mycert, ERR_reason_error_string(ERR_get_error()));
+				else if (! SSL_CTX_check_private_key(ctx))
+					g_warning("Private key does not match the certificate");
+
+				X509_free(cert);
+			} else
+				g_warning("Loading of client certificate '%s' failed: %s", mycert, ERR_reason_error_string(ERR_get_error()));
+
+			fclose(fp);
+		} else
+			g_warning("Could not find client certificate '%s'", scert);
 		g_free(scert);
 		g_free(spkey);
 	}
@@ -646,7 +686,11 @@ static void set_server_temporary_key_info(TLS_REC *tls, SSL *ssl)
 #ifdef SSL_get_server_tmp_key
 	// Show ephemeral key information.
 	EVP_PKEY *ephemeral_key = NULL;
+
+	// OPENSSL_NO_EC is for solaris 11.3 (2016), github ticket #598
+#ifndef OPENSSL_NO_EC
 	EC_KEY *ec_key = NULL;
+#endif
 	char *ephemeral_key_algorithm = NULL;
 	char *cname = NULL;
 	int nid;
@@ -658,6 +702,7 @@ static void set_server_temporary_key_info(TLS_REC *tls, SSL *ssl)
 				tls_rec_set_ephemeral_key_size(tls, EVP_PKEY_bits(ephemeral_key));
 				break;
 
+#ifndef OPENSSL_NO_EC
 			case EVP_PKEY_EC:
 				ec_key = EVP_PKEY_get1_EC_KEY(ephemeral_key);
 				nid = EC_GROUP_get_curve_name(EC_KEY_get0_group(ec_key));
@@ -670,6 +715,7 @@ static void set_server_temporary_key_info(TLS_REC *tls, SSL *ssl)
 
 				g_free_and_null(ephemeral_key_algorithm);
 				break;
+#endif
 
 			default:
 				tls_rec_set_ephemeral_key_algorithm(tls, "Unknown");
@@ -694,6 +740,21 @@ GIOChannel *net_connect_ip_ssl(IPADDR *ip, int port, IPADDR *my_ip, SERVER_REC *
 		g_io_channel_unref(handle);
 	return ssl_handle;
 }
+
+GIOChannel *net_start_ssl(SERVER_REC *server)
+{
+	GIOChannel *handle, *ssl_handle;
+
+	g_return_val_if_fail(server != NULL, NULL);
+
+	handle = net_sendbuffer_handle(server->handle);
+	if (handle == NULL)
+		return NULL;
+
+	ssl_handle  = irssi_ssl_get_iochannel(handle, server->connrec->port, server);
+	return ssl_handle;
+}
+
 
 int irssi_ssl_handshake(GIOChannel *handle)
 {

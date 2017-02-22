@@ -1,4 +1,4 @@
-AC_INIT(irssi, 0.8.21-head)
+AC_INIT(irssi, 1.1-head)
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_AUX_DIR(build-aux)
 AC_PREREQ(2.50)
@@ -21,7 +21,7 @@ AC_PATH_PROG(perlpath, perl)
 AC_CHECK_HEADERS(unistd.h dirent.h sys/ioctl.h sys/resource.h)
 
 # check posix headers..
-AC_CHECK_HEADERS(sys/socket.h sys/time.h sys/utsname.h regex.h)
+AC_CHECK_HEADERS(sys/socket.h sys/time.h sys/utsname.h)
 
 AC_SYS_LARGEFILE
 
@@ -51,6 +51,19 @@ AC_ARG_WITH(bot,
 		want_irssibot=yes
 	fi,
 	want_irssibot=no)
+
+AC_ARG_WITH(fuzzer,
+[  --with-fuzzer           Build irssi-fuzzer],
+	if test x$withval = xno; then
+		want_irssifuzzer=no
+	else
+		want_irssifuzzer=yes
+	fi,
+	want_irssifuzzer=no)
+
+AC_ARG_WITH(fuzzer-lib,
+[  --with-fuzzer-lib       Specify path to fuzzer library],
+	fuzzerlibpath="$withval")
 
 AC_ARG_WITH(proxy,
 [  --with-proxy            Build irssi-proxy],
@@ -144,6 +157,15 @@ AC_ARG_ENABLE(true-color,
 	fi,
 	want_truecolor=no)
 
+AC_ARG_ENABLE(gregex,
+[  --disable-gregex     Build without GRegex (fall back to regex.h)],
+	if test x$enableval = xno ; then
+		want_gregex=no
+	else
+		want_gregex=yes
+	fi,
+	want_gregex=yes)
+
 dnl **
 dnl ** just some generic stuff...
 dnl **
@@ -158,7 +180,7 @@ case "$host_os" in
 esac
 
 
-AC_SEARCH_LIBS([socket], [socket])
+AC_SEARCH_LIBS([socket], [network socket])
 
 AC_SEARCH_LIBS([inet_addr], [nsl])
 
@@ -237,7 +259,7 @@ for try in 1 2; do
     echo "*** trying without -lgmodule"
     glib_modules=
   fi
-  AM_PATH_GLIB_2_0(2.16.0,,, $glib_modules)
+  AM_PATH_GLIB_2_0(2.28.0,,, $glib_modules)
   if test "$GLIB_LIBS"; then
     if test $glib_modules = gmodule; then
       AC_DEFINE(HAVE_GMODULE)
@@ -286,6 +308,30 @@ if test "x$want_textui" != "xno"; then
 	AC_SUBST(TEXTUI_LIBS)
 	LIBS="$TEXTUI_NO_LIBS"
 
+fi
+
+dnl **
+dnl ** irssifuzzer checks
+dnl **
+
+if test "$want_irssifuzzer" != "no"; then
+	dnl * we need to build with -fsanitize-coverage=trace-pc-guard
+	dnl * otherwise fuzzer won't be very successful at finding bugs :)
+	if test -z "$SANFLAGS"; then
+		SANFLAGS="-g -fsanitize=address -fsanitize-coverage=trace-pc-guard"
+	fi
+	CFLAGS="$CFLAGS $SANFLAGS"
+	CXXFLAGS="$CXXFLAGS $SANFLAGS"
+
+	AC_MSG_CHECKING(for fuzzer library)
+
+	if test -z "$fuzzerlibpath"; then
+		AC_MSG_RESULT([not found, building without fuzzer front end])
+		want_irssifuzzer=no
+	else
+		FUZZER_LIBS="$fuzzerlibpath"
+		AC_SUBST(FUZZER_LIBS)
+	fi
 fi
 
 dnl **
@@ -447,6 +493,7 @@ fi
 dnl ** check what we want to build
 AM_CONDITIONAL(BUILD_TEXTUI, test "$want_textui" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIBOT, test "$want_irssibot" = "yes")
+AM_CONDITIONAL(BUILD_IRSSIFUZZER, test "$want_irssifuzzer" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIPROXY, test "$want_irssiproxy" = "yes")
 AM_CONDITIONAL(HAVE_PERL, test "$want_perl" != "no")
 
@@ -534,6 +581,12 @@ else
 	want_truecolor=no
 fi
 
+if test "x$want_gregex" = "xyes"; then
+	AC_DEFINE([USE_GREGEX], [], [use GRegex for regular expressions])
+else
+	want_gregex=no
+fi
+
 AH_TEMPLATE(HAVE_GMODULE)
 AH_TEMPLATE(HAVE_SOCKS_H, [misc..])
 AH_TEMPLATE(HAVE_STATIC_PERL)
@@ -557,6 +610,7 @@ src/fe-common/core/Makefile
 src/fe-common/irc/Makefile
 src/fe-common/irc/dcc/Makefile
 src/fe-common/irc/notifylist/Makefile
+src/fe-fuzz/Makefile
 src/fe-none/Makefile
 src/fe-text/Makefile
 src/lib-config/Makefile
@@ -648,6 +702,7 @@ echo
 
 echo "Building with 64bit DCC support .. : $offt_64bit"
 echo "Building with true color support.. : $want_truecolor"
+echo "Building with GRegex ............. : $want_gregex"
 
 echo
 echo "If there are any problems, read the INSTALL file."

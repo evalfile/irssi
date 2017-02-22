@@ -27,7 +27,7 @@
 
 #include "textbuffer.h"
 
-#ifdef HAVE_REGEX_H
+#ifndef USE_GREGEX
 #  include <regex.h>
 #endif
 
@@ -326,6 +326,10 @@ void textbuffer_line_add_colors(TEXT_BUFFER_REC *buffer, LINE_REC **line,
 		data[pos++] = 0;
 		data[pos++] = LINE_CMD_ITALIC;
 	}
+	if ((flags & GUI_PRINT_FLAG_MONOSPACE) != (buffer->last_flags & GUI_PRINT_FLAG_MONOSPACE)) {
+		data[pos++] = 0;
+		data[pos++] = LINE_CMD_MONOSPACE;
+	}
 	if (flags & GUI_PRINT_FLAG_INDENT) {
 		data[pos++] = 0;
 		data[pos++] = LINE_CMD_INDENT;
@@ -509,6 +513,10 @@ void textbuffer_line2text(LINE_REC *line, int coloring, GString *str)
 			g_string_append_printf(str, "\004%c",
 					  FORMAT_STYLE_ITALIC);
 			break;
+		case LINE_CMD_MONOSPACE:
+			g_string_append_printf(str, "\004%c",
+					  FORMAT_STYLE_MONOSPACE);
+			break;
 		case LINE_CMD_COLOR0:
 			g_string_append_printf(str, "\004%c%c",
 					  '0', FORMAT_COLOR_NOCHANGE);
@@ -537,7 +545,9 @@ GList *textbuffer_find_text(TEXT_BUFFER_REC *buffer, LINE_REC *startline,
 			    int before, int after,
 			    int regexp, int fullword, int case_sensitive)
 {
-#ifdef HAVE_REGEX_H
+#ifdef USE_GREGEX
+	GRegex *preg;
+#else
 	regex_t preg;
 #endif
         LINE_REC *line, *pre_line;
@@ -549,16 +559,23 @@ GList *textbuffer_find_text(TEXT_BUFFER_REC *buffer, LINE_REC *startline,
 	g_return_val_if_fail(buffer != NULL, NULL);
 	g_return_val_if_fail(text != NULL, NULL);
 
+#ifdef USE_GREGEX
+	preg = NULL;
+
 	if (regexp) {
-#ifdef HAVE_REGEX_H
+		preg = g_regex_new(text, G_REGEX_RAW | (case_sensitive ? 0 : G_REGEX_CASELESS), 0, NULL);
+
+		if (preg == NULL)
+			return NULL;
+	}
+#else
+	if (regexp) {
 		int flags = REG_EXTENDED | REG_NOSUB |
 			(case_sensitive ? 0 : REG_ICASE);
 		if (regcomp(&preg, text, flags) != 0)
 			return NULL;
-#else
-		return NULL;
-#endif
 	}
+#endif
 
 	matches = NULL; match_after = 0;
         str = g_string_new(NULL);
@@ -577,12 +594,15 @@ GList *textbuffer_find_text(TEXT_BUFFER_REC *buffer, LINE_REC *startline,
 		if (*text != '\0') {
 			textbuffer_line2text(line, FALSE, str);
 
-			if (line_matched)
-			line_matched =
-#ifdef HAVE_REGEX_H
-			regexp ? regexec(&preg, str->str, 0, NULL, 0) == 0 :
+			if (line_matched) {
+				line_matched = regexp ?
+#ifdef USE_GREGEX
+				    g_regex_match(preg, str->str, 0, NULL)
+#else
+				    regexec(&preg, str->str, 0, NULL, 0) == 0
 #endif
-			match_func(str->str, text) != NULL;
+					: match_func(str->str, text) != NULL;
+			}
 		}
 
 		if (line_matched) {
@@ -610,7 +630,11 @@ GList *textbuffer_find_text(TEXT_BUFFER_REC *buffer, LINE_REC *startline,
 				matches = g_list_append(matches, NULL);
 		}
 	}
-#ifdef HAVE_REGEX_H
+
+#ifdef USE_GREGEX
+	if (preg != NULL)
+		g_regex_unref(preg);
+#else
 	if (regexp) regfree(&preg);
 #endif
         g_string_free(str, TRUE);

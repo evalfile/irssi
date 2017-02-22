@@ -101,7 +101,9 @@ static void hilight_destroy(HILIGHT_REC *rec)
 {
 	g_return_if_fail(rec != NULL);
 
-#ifdef HAVE_REGEX_H
+#ifdef USE_GREGEX
+	if (rec->preg != NULL) g_regex_unref(rec->preg);
+#else
 	if (rec->regexp_compiled) regfree(&rec->preg);
 #endif
 	if (rec->channels != NULL) g_strfreev(rec->channels);
@@ -120,7 +122,12 @@ static void hilights_destroy_all(void)
 
 static void hilight_init_rec(HILIGHT_REC *rec)
 {
-#ifdef HAVE_REGEX_H
+#ifdef USE_GREGEX
+	if (rec->preg != NULL)
+		g_regex_unref(rec->preg);
+
+	rec->preg = g_regex_new(rec->text, G_REGEX_OPTIMIZE | G_REGEX_RAW | G_REGEX_CASELESS, 0, NULL);
+#else
 	if (rec->regexp_compiled) regfree(&rec->preg);
 	if (!rec->regexp)
 		rec->regexp_compiled = FALSE;
@@ -194,13 +201,24 @@ static HILIGHT_REC *hilight_find(const char *text, char **channels)
 	return NULL;
 }
 
-static int hilight_match_text(HILIGHT_REC *rec, const char *text,
+static gboolean hilight_match_text(HILIGHT_REC *rec, const char *text,
 				  int *match_beg, int *match_end)
 {
-	char *match;
+	gboolean ret = FALSE;
 
 	if (rec->regexp) {
-#ifdef HAVE_REGEX_H
+#ifdef USE_GREGEX
+		if (rec->preg != NULL) {
+			GMatchInfo *match;
+
+			g_regex_match (rec->preg, text, 0, &match);
+
+			if (g_match_info_matches(match))
+				ret = g_match_info_fetch_pos(match, 0, match_beg, match_end);
+
+			g_match_info_free(match);
+		}
+#else
 		regmatch_t rmatch[1];
 
 		if (rec->regexp_compiled &&
@@ -210,10 +228,12 @@ static int hilight_match_text(HILIGHT_REC *rec, const char *text,
 				*match_beg = rmatch[0].rm_so;
 				*match_end = rmatch[0].rm_eo;
 			}
-			return TRUE;
+			ret = TRUE;
 		}
 #endif
 	} else {
+		char *match;
+
 		if (rec->case_sensitive) {
 			match = rec->fullword ?
 				strstr_full(text, rec->text) :
@@ -228,11 +248,11 @@ static int hilight_match_text(HILIGHT_REC *rec, const char *text,
 				*match_beg = (int) (match-text);
 				*match_end = *match_beg + strlen(rec->text);
 			}
-			return TRUE;
+			ret = TRUE;
 		}
 	}
 
-	return FALSE;
+	return ret;
 }
 
 #define hilight_match_level(rec, level) \
@@ -379,34 +399,29 @@ static void sig_print_text(TEXT_DEST_REC *dest, const char *text,
 		char *middle;
 		int pos, color_pos, color_len;
 
-		tmp = g_string_new(NULL);
-
 		/* start of the line */
 		pos = strip_real_length(text, hilight_start, NULL, NULL);
-		g_string_append(tmp, text);
-		g_string_truncate(tmp, pos);
+		tmp = g_string_new_len(text, pos);
 
 		/* color */
 		g_string_append(tmp, color);
 
 		/* middle of the line, stripped */
-		middle = strip_codes(text+pos);
-		pos = tmp->len;
-		g_string_append(tmp, middle);
-		g_string_truncate(tmp, pos+hilight_len);
+		middle = strip_codes(text + pos);
+		g_string_append_len(tmp, middle, hilight_len);
 		g_free(middle);
 
 		/* end of the line */
 		pos = strip_real_length(text, hilight_end,
 					&color_pos, &color_len);
 		if (color_pos > 0)
-			g_string_append_len(tmp, text+color_pos, color_len);
+			g_string_append_len(tmp, text + color_pos, color_len);
                 else {
                         /* no colors in line, change back to default */
 			g_string_append_c(tmp, 4);
 			g_string_append_c(tmp, FORMAT_STYLE_DEFAULTS);
 		}
-		g_string_append(tmp, text+pos);
+		g_string_append(tmp, text + pos);
 
 		newstr = tmp->str;
 		g_string_free(tmp, FALSE);
@@ -509,7 +524,10 @@ static void hilight_print(int index, HILIGHT_REC *rec)
 	if (rec->case_sensitive) g_string_append(options, "-matchcase ");
 	if (rec->regexp) {
 		g_string_append(options, "-regexp ");
-#ifdef HAVE_REGEX_H
+#ifdef USE_GREGEX
+		if (rec->preg == NULL)
+			g_string_append(options, "[INVALID!] ");
+#else
 		if (!rec->regexp_compiled)
 			g_string_append(options, "[INVALID!] ");
 #endif
