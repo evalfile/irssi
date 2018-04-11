@@ -23,6 +23,7 @@
 #include "term.h"
 #include "terminfo-core.h"
 #include "fe-windows.h"
+#include "gui-printtext.h"
 #include "utf8.h"
 
 #include <signal.h>
@@ -102,6 +103,17 @@ static GSourceFuncs sigcont_funcs = {
 	.dispatch = sigcont_dispatch
 };
 
+static void term_atexit(void)
+{
+	if (!quitting && current_term && current_term->TI_rmcup) {
+		/* Unexpected exit, avoid switching out of alternate screen
+		   to keep any on-screen errors (like noperl_die()'s) */
+		current_term->TI_rmcup = NULL;
+	}
+
+	term_deinit();
+}
+
 int term_init(void)
 {
 	struct sigaction act;
@@ -140,7 +152,7 @@ int term_init(void)
 
         term_set_input_type(TERM_TYPE_8BIT);
 	term_common_init();
-        atexit(term_deinit);
+	atexit(term_atexit);
         return TRUE;
 }
 
@@ -273,10 +285,10 @@ void term_window_clear(TERM_WINDOW *window)
 {
 	int y;
 
-        terminfo_set_normal();
-        if (window->y == 0 && window->height == term_height) {
-        	term_clear();
-        } else {
+	terminfo_set_normal();
+	if (window->y == 0 && window->height == term_height && window->width == term_width) {
+		term_clear();
+	} else {
 		for (y = 0; y < window->height; y++) {
 			term_move(window, 0, y);
 			term_clrtoeol(window);
@@ -441,14 +453,14 @@ void term_set_color(TERM_WINDOW *window, int col)
 void term_move(TERM_WINDOW *window, int x, int y)
 {
 	if (x >= 0 && y >= 0) {
-	vcmove = TRUE;
-	vcx = x+window->x;
-        vcy = y+window->y;
+		vcmove = TRUE;
+		vcx = x+window->x;
+		vcy = y+window->y;
 
-	if (vcx >= term_width)
-		vcx = term_width-1;
-	if (vcy >= term_height)
-                vcy = term_height-1;
+		if (vcx >= term_width)
+			vcx = term_width-1;
+		if (vcy >= term_height)
+			vcy = term_height-1;
 	}
 }
 
@@ -541,7 +553,7 @@ int term_addstr(TERM_WINDOW *window, const char *str)
 		while (*ptr != '\0') {
 			tmp = g_utf8_get_char_validated(ptr, -1);
 			/* On utf8 error, treat as single byte and try to
-			   continue interpretting rest of string as utf8 */
+			   continue interpreting rest of string as utf8 */
 			if (tmp == (gunichar)-1 || tmp == (gunichar)-2) {
 				len++;
 				ptr++;
@@ -563,21 +575,52 @@ int term_addstr(TERM_WINDOW *window, const char *str)
 
 void term_clrtoeol(TERM_WINDOW *window)
 {
-	/* clrtoeol() doesn't necessarily understand colors */
-	if (last_fg == -1 && last_bg == -1 &&
-	    (last_attrs & (ATTR_UNDERLINE|ATTR_REVERSE|ATTR_ITALIC)) == 0) {
-		if (!term_lines_empty[vcy]) {
-			if (vcmove) term_move_real();
-			terminfo_clrtoeol();
-			if (vcx == 0) term_lines_empty[vcy] = TRUE;
-		}
-	} else if (vcx < term_width) {
-		/* we'll need to fill the line ourself. */
-		if (vcmove) term_move_real();
-		terminfo_repeat(' ', term_width-vcx);
-		terminfo_move(vcx, vcy);
-                term_lines_empty[vcy] = FALSE;
+	if (vcx < window->x) {
+		/* we just wrapped outside of the split, warp the cursor back into the window */
+		vcx += window->x;
+		vcmove = TRUE;
 	}
+	if (window->x + window->width < term_width) {
+		/* we need to fill a vertical split */
+		if (vcmove) term_move_real();
+		terminfo_repeat(' ', window->x + window->width - vcx + 1);
+		terminfo_move(vcx, vcy);
+		term_lines_empty[vcy] = FALSE;
+	} else {
+		/* clrtoeol() doesn't necessarily understand colors */
+		if (last_fg == -1 && last_bg == -1 &&
+		    (last_attrs & (ATTR_UNDERLINE|ATTR_REVERSE|ATTR_ITALIC)) == 0) {
+			if (!term_lines_empty[vcy]) {
+				if (vcmove) term_move_real();
+				terminfo_clrtoeol();
+				if (vcx == 0) term_lines_empty[vcy] = TRUE;
+			}
+		} else if (vcx < term_width) {
+			/* we'll need to fill the line ourself. */
+			if (vcmove) term_move_real();
+			terminfo_repeat(' ', term_width-vcx);
+			terminfo_move(vcx, vcy);
+			term_lines_empty[vcy] = FALSE;
+		}
+	}
+}
+
+void term_window_clrtoeol(TERM_WINDOW* window, int ypos)
+{
+	if (ypos >= 0 && window->y + ypos != vcy) {
+		/* the line is already full */
+		return;
+	}
+	term_clrtoeol(window);
+	if (window->x + window->width < term_width) {
+		gui_printtext_window_border(window->x + window->width, window->y + ypos);
+		term_set_color(window, ATTR_RESET);
+	}
+}
+
+void term_window_clrtoeol_abs(TERM_WINDOW* window, int ypos)
+{
+	term_window_clrtoeol(window, ypos - window->y);
 }
 
 void term_move_cursor(int x, int y)
@@ -618,6 +661,13 @@ void term_stop(void)
 {
 	terminfo_stop(current_term);
 	kill(getpid(), SIGTSTP);
+	/* this call needs to stay here in case the TSTP was ignored,
+	   because then we never see a CONT to call the restoration
+	   code. On the other hand we also cannot remove the CONT
+	   handler because then nothing would restore the screen when
+	   Irssi is killed with TSTP/STOP from external. */
+	terminfo_cont(current_term);
+	irssi_redraw();
 }
 
 static int input_utf8(const unsigned char *buffer, int size, unichar *result)
@@ -714,4 +764,32 @@ void term_gets(GArray *buffer, int *line_count)
                         term_inbuf_pos -= i;
 		}
 	}
+}
+
+static const char* term_env_warning =
+	"You seem to be running Irssi inside %2$s, but the TERM environment variable "
+	"is set to '%1$s', which can cause display glitches.\n"
+	"Consider changing TERM to '%2$s' or '%2$s-256color' instead.";
+
+void term_environment_check(void)
+{
+	const char *term, *sty, *tmux, *multiplexer;
+
+	term = g_getenv("TERM");
+	sty = g_getenv("STY");
+	tmux = g_getenv("TMUX");
+
+	multiplexer = (sty && *sty) ? "screen" :
+	              (tmux && *tmux) ? "tmux" : NULL;
+
+	if (!multiplexer) {
+		return;
+	}
+
+	if (term && (g_str_has_prefix(term, "screen") ||
+	             g_str_has_prefix(term, "tmux"))) {
+		return;
+	}
+
+	g_warning(term_env_warning, term, multiplexer);
 }

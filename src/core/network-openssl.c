@@ -20,6 +20,7 @@
 
 #include "module.h"
 #include "network.h"
+#include "network-openssl.h"
 #include "net-sendbuffer.h"
 #include "misc.h"
 #include "servers.h"
@@ -34,7 +35,8 @@
 #include <openssl/err.h>
 
 /* OpenSSL 1.1.0 introduced some backward-incompatible changes to the api */
-#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
+#if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && \
+    (!defined(LIBRESSL_VERSION_NUMBER) || LIBRESSL_VERSION_NUMBER < 0x2070000fL)
 /* The two functions below could be already defined if OPENSSL_API_COMPAT is
  * below the 1.1.0 version so let's do a clean start */
 #undef  X509_get_notBefore
@@ -42,6 +44,22 @@
 #define X509_get_notBefore(x)     X509_get0_notBefore(x)
 #define X509_get_notAfter(x)      X509_get0_notAfter(x)
 #define ASN1_STRING_data(x)       ASN1_STRING_get0_data(x)
+#endif
+
+/* OpenSSL 1.1.0 also introduced some useful additions to the api */
+#if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
+#if (OPENSSL_VERSION_NUMBER < 0x10100000L) || \
+    (defined (LIBRESSL_VERSION_NUMBER) && LIBRESSL_VERSION_NUMBER < 0x2070000fL)
+static int X509_STORE_up_ref(X509_STORE *vfy)
+{
+    int n;
+
+    n = CRYPTO_add(&vfy->references, 1, CRYPTO_LOCK_X509_STORE);
+    g_assert(n > 1);
+
+    return (n > 1) ? 1 : 0;
+}
+#endif
 #endif
 
 /* ssl i/o channel object */
@@ -58,6 +76,10 @@ typedef struct
 } GIOSSLChannel;
 
 static int ssl_inited = FALSE;
+/* https://github.com/irssi/irssi/issues/820 */
+#if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
+static X509_STORE *store = NULL;
+#endif
 
 static void irssi_ssl_free(GIOChannel *handle)
 {
@@ -362,8 +384,12 @@ static GIOFuncs irssi_ssl_channel_funcs = {
     irssi_ssl_get_flags
 };
 
-static gboolean irssi_ssl_init(void)
+gboolean irssi_ssl_init(void)
 {
+#if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
+	int success;
+#endif
+
 #if (OPENSSL_VERSION_NUMBER >= 0x10100000L) && !defined(LIBRESSL_VERSION_NUMBER)
 	if (!OPENSSL_init_ssl(OPENSSL_INIT_SSL_DEFAULT, NULL)) {
 		g_error("Could not initialize OpenSSL");
@@ -374,6 +400,23 @@ static gboolean irssi_ssl_init(void)
 	SSL_load_error_strings();
 	OpenSSL_add_all_algorithms();
 #endif
+
+#if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
+	store = X509_STORE_new();
+	if (store == NULL) {
+		g_error("Could not initialize OpenSSL: X509_STORE_new() failed");
+		return FALSE;
+	}
+
+	success = X509_STORE_set_default_paths(store);
+	if (success == 0) {
+		g_warning("Could not load default certificates");
+		X509_STORE_free(store);
+		store = NULL;
+		/* Don't return an error; the user might have their own cafile/capath. */
+	}
+#endif
+
 	ssl_inited = TRUE;
 
 	return TRUE;
@@ -491,10 +534,21 @@ static GIOChannel *irssi_ssl_get_iochannel(GIOChannel *handle, int port, SERVER_
 		g_free(scafile);
 		g_free(scapath);
 		verify = TRUE;
-	} else {
+	}
+#if (OPENSSL_VERSION_NUMBER >= 0x10002000L)
+	  else if (store != NULL) {
+		/* Make sure to increment the refcount every time the store is
+		 * used, that's essential not to get it free'd by OpenSSL when
+		 * the SSL_CTX is destroyed. */
+		X509_STORE_up_ref(store);
+		SSL_CTX_set_cert_store(ctx, store);
+	}
+#else
+	  else {
 		if (!SSL_CTX_set_default_verify_paths(ctx))
 			g_warning("Could not load default certificates");
 	}
+#endif
 
 	if(!(ssl = SSL_new(ctx)))
 	{
@@ -549,9 +603,6 @@ static void set_cipher_info(TLS_REC *tls, SSL *ssl)
 
 static void set_pubkey_info(TLS_REC *tls, X509 *cert, unsigned char *cert_fingerprint, size_t cert_fingerprint_size, unsigned char *public_key_fingerprint, size_t public_key_fingerprint_size)
 {
-	g_return_if_fail(tls != NULL);
-	g_return_if_fail(cert != NULL);
-
 	EVP_PKEY *pubkey = NULL;
 	char *cert_fingerprint_hex = NULL;
 	char *public_key_fingerprint_hex = NULL;
@@ -560,13 +611,16 @@ static void set_pubkey_info(TLS_REC *tls, X509 *cert, unsigned char *cert_finger
 	char buffer[128];
 	size_t length;
 
+	g_return_if_fail(tls != NULL);
+	g_return_if_fail(cert != NULL);
+
 	pubkey = X509_get_pubkey(cert);
 
 	cert_fingerprint_hex = binary_to_hex(cert_fingerprint, cert_fingerprint_size);
 	tls_rec_set_certificate_fingerprint(tls, cert_fingerprint_hex);
 	tls_rec_set_certificate_fingerprint_algorithm(tls, "SHA256");
 
-	// Show algorithm.
+	/* Show algorithm. */
 	switch (EVP_PKEY_id(pubkey)) {
 		case EVP_PKEY_RSA:
 			tls_rec_set_public_key_algorithm(tls, "RSA");
@@ -590,7 +644,7 @@ static void set_pubkey_info(TLS_REC *tls, X509 *cert, unsigned char *cert_finger
 	tls_rec_set_public_key_size(tls, EVP_PKEY_bits(pubkey));
 	tls_rec_set_public_key_fingerprint_algorithm(tls, "SHA256");
 
-	// Read the NotBefore timestamp.
+	/* Read the NotBefore timestamp. */
 	bio = BIO_new(BIO_s_mem());
 	ASN1_TIME_print(bio, X509_get_notBefore(cert));
 	length = BIO_read(bio, buffer, sizeof(buffer));
@@ -598,7 +652,7 @@ static void set_pubkey_info(TLS_REC *tls, X509 *cert, unsigned char *cert_finger
 	BIO_free(bio);
 	tls_rec_set_not_before(tls, buffer);
 
-	// Read the NotAfter timestamp.
+	/* Read the NotAfter timestamp. */
 	bio = BIO_new(BIO_s_mem());
 	ASN1_TIME_print(bio, X509_get_notAfter(cert));
 	length = BIO_read(bio, buffer, sizeof(buffer));
@@ -613,9 +667,6 @@ static void set_pubkey_info(TLS_REC *tls, X509 *cert, unsigned char *cert_finger
 
 static void set_peer_cert_chain_info(TLS_REC *tls, SSL *ssl)
 {
-	g_return_if_fail(tls != NULL);
-	g_return_if_fail(ssl != NULL);
-
 	int nid;
 	char *key = NULL;
 	char *value = NULL;
@@ -628,6 +679,9 @@ static void set_peer_cert_chain_info(TLS_REC *tls, SSL *ssl)
 	TLS_CERT_ENTRY_REC *tls_cert_entry_rec = NULL;
 	ASN1_STRING *data = NULL;
 
+	g_return_if_fail(tls != NULL);
+	g_return_if_fail(ssl != NULL);
+
 	chain = SSL_get_peer_cert_chain(ssl);
 
 	if (chain == NULL)
@@ -636,7 +690,7 @@ static void set_peer_cert_chain_info(TLS_REC *tls, SSL *ssl)
 	for (i = 0; i < sk_X509_num(chain); i++) {
 		cert_rec = tls_cert_create_rec();
 
-		// Subject.
+		/* Subject. */
 		name = X509_get_subject_name(sk_X509_value(chain, i));
 
 		for (j = 0; j < X509_NAME_entry_count(name); j++) {
@@ -655,7 +709,7 @@ static void set_peer_cert_chain_info(TLS_REC *tls, SSL *ssl)
 			tls_cert_rec_append_subject_entry(cert_rec, tls_cert_entry_rec);
 		}
 
-		// Issuer.
+		/* Issuer. */
 		name = X509_get_issuer_name(sk_X509_value(chain, i));
 
 		for (j = 0; j < X509_NAME_entry_count(name); j++) {
@@ -680,20 +734,20 @@ static void set_peer_cert_chain_info(TLS_REC *tls, SSL *ssl)
 
 static void set_server_temporary_key_info(TLS_REC *tls, SSL *ssl)
 {
-	g_return_if_fail(tls != NULL);
-	g_return_if_fail(ssl != NULL);
-
 #ifdef SSL_get_server_tmp_key
-	// Show ephemeral key information.
+	/* Show ephemeral key information. */
 	EVP_PKEY *ephemeral_key = NULL;
 
-	// OPENSSL_NO_EC is for solaris 11.3 (2016), github ticket #598
+	/* OPENSSL_NO_EC is for solaris 11.3 (2016), github ticket #598 */
 #ifndef OPENSSL_NO_EC
 	EC_KEY *ec_key = NULL;
 #endif
 	char *ephemeral_key_algorithm = NULL;
 	char *cname = NULL;
 	int nid;
+
+	g_return_if_fail(tls != NULL);
+	g_return_if_fail(ssl != NULL);
 
 	if (SSL_get_server_tmp_key(ssl, &ephemeral_key)) {
 		switch (EVP_PKEY_id(ephemeral_key)) {
@@ -725,7 +779,7 @@ static void set_server_temporary_key_info(TLS_REC *tls, SSL *ssl)
 
 		EVP_PKEY_free(ephemeral_key);
 	}
-#endif // SSL_get_server_tmp_key.
+#endif /* SSL_get_server_tmp_key. */
 }
 
 GIOChannel *net_connect_ip_ssl(IPADDR *ip, int port, IPADDR *my_ip, SERVER_REC *server)
@@ -832,7 +886,7 @@ int irssi_ssl_handshake(GIOChannel *handle)
 	set_peer_cert_chain_info(tls, chan->ssl);
 	set_server_temporary_key_info(tls, chan->ssl);
 
-	// Emit the TLS rec.
+	/* Emit the TLS rec. */
 	signal_emit("tls handshake finished", 2, chan->server, tls);
 
 	ret = 1;
@@ -859,7 +913,7 @@ int irssi_ssl_handshake(GIOChannel *handle)
 		ret = irssi_ssl_verify(chan->ssl, chan->ctx, chan->server->connrec->address, chan->port, cert, chan->server, tls);
 
 		if (! ret) {
-			// irssi_ssl_verify emits a warning itself.
+			/* irssi_ssl_verify emits a warning itself. */
 			goto done;
 		}
 	}

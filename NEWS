@@ -1,4 +1,188 @@
-v1.1-head 2017-xx-xx  The Irssi team <staff@irssi.org>
+v1.2-head 2018-xx-xx  The Irssi team <staff@irssi.org>
+
+v1.1.1 2018-02-15 The Irssi team <staff@irssi.org>
+	! Contains all changes from 1.0.7
+	- Restore compatibility with OpenSSL < 1.0.2 (#820, #831)
+	- Fix test compilation on some platforms (#815, #816)
+	- Fix portability and backwards compatibility of test runner
+          (#818, #845)
+
+v1.0.7 2018-02-15 The Irssi team <staff@irssi.org>
+	- Prevent use after free error during the execution of some
+	  commands. Found by Joseph Bisch (GL#17, GL!24).
+	- Revert netsplit print optimisation due to crashes (#465, #809,
+          #812, #819, #824).
+	- Fix use after free when SASL messages are received in
+          unexpected order (GL#26, GL!33).
+	- Fix null pointer dereference in the tab completion when an
+          empty nick is joined (GL#24, GL!31).
+	- Fix use after free when entering oper password (GL#22,
+          GL!32).
+	- Fix null pointer dereference when too many windows are
+          opened (GL#27, #837).
+	- Fix out of bounds access in theme strings when the last
+          escape is incomplete. Credit to Oss-Fuzz (#842).
+	- Fix out of bounds write when using negative counts on window
+          resize (GL#25, GL#29, #836).
+	- Minor help correction. By William Jackson (#834).
+
+v1.1.0 2018-01-15 The Irssi team <staff@irssi.org>
+	! Warning. Irssi is broken and will crash with OpenSSL < 1.0.2
+          due to openssl/openssl commit
+          5b4b9ce976fce09a7a92e2f25b91a1635cb840fe
+	* Colour is now re-set when reaching a comma, matching mIRC
+	  behaviour (#742, #740, #790)
+	* Irssi now shows the initial nick and name on first start
+	  (#785, #786)
+	* lynx is no longer required to run autogen.sh (#81, #781)
+	* The command history no longer permits wrapping around (#686)
+	* /foreach now correctly sends arguments as commands, stopping
+	  you from embarassing AMSGs (#659)
+	* /server does not connect to servers anymore, use /server
+	  connect to change servers (#559, #649).
+	* The net_ip_compare API function is now deprecated, and the
+          previously deprecated net_connect has been removed
+          (#770). By Will Storey (#770)
+	+ Add an option to ignore all channels or ignore all queries
+	  using /set activity_hide_targets. By Jari Matilainen (#612,
+	  #779)
+	+ Add a startup warning if the TERM var is wrong inside
+	  tmux/screen (#726)
+	+ Add option to hide certain levels from the textbuffer using
+	  /window hidelevel (#746, #808)
+	+ Irssi now has its first unit test (for mode parsing). By
+	  Will Storey (#793)
+	+ Added access to global command history when using window
+	  history, and a binding to erase entries from the command
+	  history (erase_history_entry) (#762)
+	+ -alternate_nick is now available as a network specific
+	  property. By Paul Townsend (#120, #771)
+	+ On FreeBSD, Irssi now supports Capsicum sandbox (/capsicum
+	  enter). By Edward Tomasz Napierala (#735, #755, #772)
+	+ Filenames (directories) ending with a / now tab-complete
+	  (#741)
+	+ UTF-8 should now work in regular expressions when using
+	  GRegex (the default) (#636, #653)
+	+ Nicks are now properly escaped on completion. By Oscar
+	  Linderholm (#693, #709)
+	+ /server add -port <num> now works. By Jari Matilainen (#703)
+	+ Add a setting key_timeout to make key sequences
+	  automatically re-set when not finished (#644, #645)
+	+ Warn users about expired client certificates, as servers may
+	  refuse them (#211, #627)
+	+ Add a new net_start_ssl function for StartTLS. This is
+	  available from ABI 8 and can be used by protocol modules
+	  (#615, #622).
+	+ The %# code is now stored in the textbuffer, so for example
+	  web scripts can make use of it (#626)
+	+ Add new setting break_wide which can be used to enable
+	  breaking of wide characters (for east-asian
+	  users). Originally from FreeBSD ports. (#625)
+	+ Add fuzzing code (#610, #620, #701, #713)
+	- Netsplits show properly again (#812)
+	- Do not error on blank lines when using /exec -o. By Fabian
+	  Kurz (FS#902, #805)
+	- Detect used nickname as reported by server. By Alexandre
+	  Morignot (#219, #804)
+	- Prevent use after free error during the execution of some
+	  commands. Found by Joseph Bisch. (GL#17, GL!24)
+	- Fix MODE parameter parsing when colon was used at a place
+	  Irssi didn't expect (#601, #766)
+	- Fixed code to compile with
+	  -Werror=declaration-after-statement (#795)
+	- Clang-format is now supported for git-clang-format (#784)
+	- Fix use after free when changing the network of
+	  hilights. Reported by Rui Mathias. (#787, #788)
+	- Fix positioning error when tab-completing non-ascii
+	  strings. (#752, #754)
+	- In-development issues (#750, #751)
+	- Clarify Alis in /help list (#699, #712)
+	- Improve /lastlog performance from O(N^2) to O(N) (#715)
+	- Fix a segfault on "script destroyed" signal. By Stephen
+	  Oberholtzer (#660, #661).
+	- Fix early ISON error (#596, #647)
+	- Documentation improvements. By Paolo Martini (#639).
+	  By Tristan Pepin (#731).  By Paul Townsend (#684, #736).
+	  By Will Storey (#777)
+	- Minor cleanups (#590). By Edward Tomasz Napierala (#734,
+	  #738)
+	- Fix space issue in glib-2.0.m4 (#621)
+
+v1.0.6 2018-01-07 The Irssi team <staff@irssi.org>
+	! Note: Code and aliases using `$($'-like constructs are no
+          longer supported due to issue GL#18. Sorry about the
+          inconvenience.
+	- Fix invalid memory access when reading hilight configuration
+          (#787, #788).
+	- Fix null pointer dereference when the channel topic is set
+          without specifying a sender (GL#20, GL!25).
+	- Fix return of random memory when using incomplete escape
+          codes (GL#21, GL!26).
+	- Fix heap buffer overflow when completing certain strings
+          (GL#19, GL!27).
+	- Fix return of random memory when using an incomplete
+          variable argument (GL#18, GL!28).
+
+v1.0.5 2017-10-23  The Irssi team <staff@irssi.org>
+	- Fix missing -sasl_method '' in /NETWORK (#718, #719).
+	- Fix incorrect restoration of term state when hitting SUSP
+          inside screen (#737, #733).
+	- Fix out of bounds read when compressing colour
+          sequences. Found by Hanno Böck (GL#12, GL!18).
+	- Fix use after free condition during a race condition when
+          waiting on channel sync during a rejoin (GL#13, GL!19).
+	- Fix null pointer dereference when parsing certain malformed
+          CTCP DCC messages (GL#14, GL!20).
+	- Fix crash due to null pointer dereference when failing to
+          split messages due to overlong nick or target (GL#15, GL!21).
+	- Fix out of bounds read when trying to skip a safe channel ID
+          without verifying that the ID is long enough (GL#16, GL!22).
+	- Fix return of random memory when inet_ntop failed (#769).
+	- Minor statusbar help update. By Robert Bisewski (#758,
+          #763).
+
+v1.0.4 2017-07-07  The Irssi team <staff@irssi.org>
+	- Fix null pointer dereference when parsing invalid timestamp (GL#10,
+	  GL!15). Reported by Brian 'geeknik' Carpenter.
+	- Fix use-after-free condition when removing nicks from the internal
+	  nicklist (GL#11, GL!16). Reported by Brian 'geeknik' Carpenter.
+	- Fix incorrect string comparison in DCC file names (#714).
+	- Fix regression in Irssi 1.0.3 where it would claim "Invalid time '-1'"
+	  (#716, #722).
+	- Fix a bug when using \n to separate lines with expand_escapes (#723).
+	- Retain screen output on improper exit, to better see any error
+	  messages (#287, #721).
+	- Minor help update (#729).
+
+v1.0.3 2017-06-06  The Irssi team <staff@irssi.org>
+	! Regression info in 1.0.3: #716 Warnings on start up: invalid time '-1'
+	- Fix out of bounds read when scanning expandos (GL!11).
+	- Fix invalid memory access with quoted filenames in DCC
+	  (GL#8, GL!12).
+	- Fix null-pointer dereference on DCC without address (GL#9, GL!13).
+	- Improve integer overflow handling. Originally reported by
+          oss-fuzz#525 (#706).
+	- Improve nicklist performance from O(N^2) to O(N) (#705).
+	- Fix initial screen redraw delay. By Stephen Oberholtzer
+	  (#680, bdo#856201).
+	- Fix incorrect reset of true colours when resetting background. (#711).
+	- Fix missing -notls option in /SERVER. By Jari Matilainen (#117, #702).
+	- Fix minor history glitch on overcounter (#462, #685).
+	- Improved OpenSSL detection at compile time. By Rodrigo Rebello (#677).
+	- Improved NetBSD Terminfo detection. By Maya Rashish (#694, #698).
+	- Add missing syntax info for COMPLETION (#687, #688).
+	- Minor typo correction in help. By Michael Hansen (#707).
+
+v1.0.2 2017-03-10  The Irssi team <staff@irssi.org>
+	! Warning. Irssi is broken on GLib 2.46 (bgo#755496)
+	- Prevent some null-pointer crashes (GL!9).
+	- Fix compilation with OpenSSL 1.1.0 (#628, #597).
+	- Correct dereferencing of already freed server objects during
+	  output of netjoins. Found by APic (GL!10, GL#7).
+	- Fix in command arg parser to detect missing arguments in tail place
+	  (#652, #651).
+	- Fix regression that broke incoming DCC file transfers (#667, #656).
+	- Fix issue with escaping \ in evaluated strings (#669, #520).
 
 v1.0.1 2017-02-03  The Irssi team <staff@irssi.org>
 	- Fix Perl compilation in object dir. By Martijn Dekker (#602, #623).
@@ -8,6 +192,8 @@ v1.0.1 2017-02-03  The Irssi team <staff@irssi.org>
 	- Fix regression that broke second level completion (#613, #609).
 	- Correct missing NULL termination in perl_parse. By Hanno Böck (#619).
 	- Sync broken mail.pl script (#624, #607).
+	- Prevent a memory leak during the processing of the SASL
+	  response (GL!8, GL#5)
 
 v1.0.0 2017-01-03  The Irssi team <staff@irssi.org>
 	* Removed --disable-ipv6 (#408).
@@ -127,6 +313,8 @@ v0.8.20 2016-09-16  The Irssi team <staff@irssi.org>
 	  Quarkslab.
 
 v0.8.19 2016-03-23  The Irssi team <staff@irssi.org>
+	! If your cursor keys stopped working, try this first: `/bind
+          meta-O key meta2'
 	- Fixed regression when joining and parting channels on IRCnet (#435)
 	- Fixed SASL EXTERNAL. By Mantas Mikulėnas (grawity, #432)
 	- Fixed regression when not using SASL (#438)
@@ -142,11 +330,15 @@ v0.8.19 2016-03-23  The Irssi team <staff@irssi.org>
 
 v0.8.18 2016-02-13  The Irssi team <staff@irssi.org>
 	* Modules will now require to define a
+
 	      void MODULENAME ## _abicheck(int *version)
+
 	  method to ensure that they are compiled against the correct Irssi
 	  version.
 	* The signature of "message private" has been changed to
+
 	      5: server, message, nick, address, target
+
 	  in order to support "self messages". Module authors should
 	  implement this change if they are using this signal.
 	* Removing networks will now remove all attached servers and channels
@@ -159,12 +351,14 @@ v0.8.18 2016-02-13  The Irssi team <staff@irssi.org>
 	  effect for anyone given that it has been unsupported for several years.
 	+ CAP SASL PLAIN login is now supported natively.
 	+ Paste bracket markers can be requested from terminal with
+
 	      /set paste_use_bracketed_mode on
+
 	+ "Self messages" generated by some bouncers can now be received in the
 	  proper window.
 	+ Try to split long lines on spaces to avoid words being splitted. Adds
-	  a new option: 'split_line_on_space' which defaults to on.
-	+ Add setting hilight_nick_matches_everywhere (#56).
+	  a new option: `split_line_on_space' which defaults to on.
+	+ Add setting `hilight_nick_matches_everywhere' (#56).
 	+ The config parser is more robust and prints out better diagnostics on
 	  incorrect config files.
 	+ Ctrl+^ (FS#721) and Ctrl+J can now be bound.

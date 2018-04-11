@@ -33,6 +33,8 @@
 #define isarg(c) \
 	(i_isdigit(c) || (c) == '*' || (c) == '~' || (c) == '-')
 
+#define ALIGN_MAX 222488
+
 static SPECIAL_HISTORY_FUNC history_func = NULL;
 
 static char *get_argument(char **cmd, char **arglist)
@@ -275,6 +277,8 @@ static char *get_special_value(char **cmd, SERVER_REC *server, void *item,
 static int get_alignment_args(char **data, int *align, int *flags, char *pad)
 {
 	char *str;
+	char *endptr;
+	guint align_;
 
 	*align = 0;
 	*flags = ALIGN_CUT|ALIGN_PAD;
@@ -295,10 +299,15 @@ static int get_alignment_args(char **data, int *align, int *flags, char *pad)
 		return FALSE; /* expecting number */
 
 	/* get the alignment size */
-	while (i_isdigit(*str)) {
-		*align = (*align) * 10 + (*str-'0');
-		str++;
+	if (!parse_uint(str, &endptr, 10, &align_)) {
+		return FALSE;
 	}
+	/* alignment larger than supported */
+	if (align_ > ALIGN_MAX) {
+		return FALSE;
+	}
+	str = endptr;
+	*align = align_;
 
 	/* get the pad character */
 	while (*str != '\0' && *str != ']') {
@@ -334,11 +343,14 @@ char *get_alignment(const char *text, int align, int flags, char pad)
 
 	/* add pad characters */
 	if (flags & ALIGN_PAD) {
-		while (string_width(str->str, policy) < align) {
+		int pad_len = align - string_width(str->str, policy);
+		if (pad_len > 0) {
+			char *pad_full = g_strnfill(pad_len, pad);
 			if (flags & ALIGN_RIGHT)
-				g_string_prepend_c(str, pad);
+				g_string_prepend(str, pad_full);
 			else
-				g_string_append_c(str, pad);
+				g_string_append(str, pad_full);
+			g_free(pad_full);
 		}
 	}
 
@@ -381,6 +393,7 @@ char *parse_special(char **cmd, SERVER_REC *server, void *item,
 	}
 
 	nest_free = FALSE; nest_value = NULL;
+#if 0 /* this code is disabled due to security issues until it is fixed */
 	if (**cmd == '(' && (*cmd)[1] != '\0') {
 		/* subvariable */
 		int toplevel = nested_orig_cmd == NULL;
@@ -409,6 +422,9 @@ char *parse_special(char **cmd, SERVER_REC *server, void *item,
 
                 if (toplevel) nested_orig_cmd = NULL;
 	}
+#else
+	if (nested_orig_cmd) nested_orig_cmd = NULL;
+#endif
 
 	if (**cmd != '{')
 		brackets = FALSE;

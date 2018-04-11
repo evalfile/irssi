@@ -30,16 +30,16 @@
  * Based on IRCv3 SASL Extension Specification:
  * http://ircv3.net/specs/extensions/sasl-3.1.html
  */
-#define AUTHENTICATE_CHUNK_SIZE 400 // bytes
+#define AUTHENTICATE_CHUNK_SIZE 400 /* bytes */
 
 /*
  * Maximum size to allow the buffer to grow to before the next fragment comes in. Note that
  * due to the way fragmentation works, the maximum message size will actually be:
  * floor(AUTHENTICATE_MAX_SIZE / AUTHENTICATE_CHUNK_SIZE) + AUTHENTICATE_CHUNK_SIZE - 1
  */
-#define AUTHENTICATE_MAX_SIZE 8192 // bytes
+#define AUTHENTICATE_MAX_SIZE 8192 /* bytes */
 
-#define SASL_TIMEOUT (20 * 1000) // ms
+#define SASL_TIMEOUT (20 * 1000) /* ms */
 
 static gboolean sasl_timeout(IRC_SERVER_REC *server)
 {
@@ -55,9 +55,20 @@ static gboolean sasl_timeout(IRC_SERVER_REC *server)
 	return FALSE;
 }
 
+static void sasl_timeout_stop(IRC_SERVER_REC *server)
+{
+	/* Stop any pending timeout, if any */
+	if (server->sasl_timeout != 0) {
+		g_source_remove(server->sasl_timeout);
+		server->sasl_timeout = 0;
+	}
+}
+
 static void sasl_start(IRC_SERVER_REC *server, const char *data, const char *from)
 {
 	IRC_SERVER_CONNECT_REC *conn;
+
+	sasl_timeout_stop(server);
 
 	conn = server->connrec;
 
@@ -77,11 +88,6 @@ static void sasl_fail(IRC_SERVER_REC *server, const char *data, const char *from
 {
 	char *params, *error;
 
-	/* Stop any pending timeout, if any */
-	if (server->sasl_timeout != 0) {
-		g_source_remove(server->sasl_timeout);
-		server->sasl_timeout = 0;
-	}
 
 	params = event_get_params(data, 2, NULL, &error);
 
@@ -97,10 +103,7 @@ static void sasl_fail(IRC_SERVER_REC *server, const char *data, const char *from
 
 static void sasl_already(IRC_SERVER_REC *server, const char *data, const char *from)
 {
-	if (server->sasl_timeout != 0) {
-		g_source_remove(server->sasl_timeout);
-		server->sasl_timeout = 0;
-	}
+	sasl_timeout_stop(server);
 
 	server->sasl_success = TRUE;
 
@@ -112,10 +115,7 @@ static void sasl_already(IRC_SERVER_REC *server, const char *data, const char *f
 
 static void sasl_success(IRC_SERVER_REC *server, const char *data, const char *from)
 {
-	if (server->sasl_timeout != 0) {
-		g_source_remove(server->sasl_timeout);
-		server->sasl_timeout = 0;
-	}
+	sasl_timeout_stop(server);
 
 	server->sasl_success = TRUE;
 
@@ -265,7 +265,7 @@ static void sasl_step_fail(IRC_SERVER_REC *server)
 	irc_send_cmd_now(server, "AUTHENTICATE *");
 	cap_finish_negotiation(server);
 
-	server->sasl_timeout = 0;
+	sasl_timeout_stop(server);
 
 	signal_emit("server sasl failure", 2, server, "The server sent an invalid payload");
 }
@@ -274,11 +274,7 @@ static void sasl_step(IRC_SERVER_REC *server, const char *data, const char *from
 {
 	GString *req = NULL;
 
-	/* Stop the timer */
-	if (server->sasl_timeout != 0) {
-		g_source_remove(server->sasl_timeout);
-		server->sasl_timeout = 0;
-	}
+	sasl_timeout_stop(server);
 
 	if (!sasl_reassemble_incoming(server, data, &req)) {
 		sasl_step_fail(server);
@@ -302,10 +298,7 @@ static void sasl_disconnected(IRC_SERVER_REC *server)
 		return;
 	}
 
-	if (server->sasl_timeout != 0) {
-		g_source_remove(server->sasl_timeout);
-		server->sasl_timeout = 0;
-	}
+	sasl_timeout_stop(server);
 }
 
 void sasl_init(void)

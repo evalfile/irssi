@@ -31,6 +31,7 @@
 
 #include "printtext.h"
 #include "fe-common-core.h"
+#include "fe-settings.h"
 #include "themes.h"
 
 #include "term.h"
@@ -51,6 +52,11 @@ void perl_core_deinit(void);
 
 void fe_perl_init(void);
 void fe_perl_deinit(void);
+#endif
+
+#ifdef HAVE_STATIC_OTR
+void otr_core_init(void);
+void otr_core_deinit(void);
 #endif
 
 void irc_init(void);
@@ -79,30 +85,18 @@ static int dirty, full_redraw;
 static GMainLoop *main_loop;
 int quitting;
 
-static const char *banner_text =
-	" ___           _\n"
-	"|_ _|_ _ _____(_)\n"
- 	" | || '_(_-<_-< |\n"
-	"|___|_| /__/__/_|\n"
-	"Irssi v" PACKAGE_VERSION " - http://www.irssi.org";
-
-static const char *firsttimer_text =
-	"- - - - - - - - - - - - - - - - - - - - - - - - - - - -\n"
-	"Hi there! If this is your first time using Irssi, you\n"
-	"might want to go to our website and read the startup\n"
-	"documentation to get you going.\n\n"
-	"Our community and staff are available to assist you or\n"
-	"to answer any questions you may have.\n\n"
-	"Use the /HELP command to get detailed information about\n"
-	"the available commands.\n"
-	"- - - - - - - - - - - - - - - - - - - - - - - - - - - -";
-
 static int display_firsttimer = FALSE;
+static unsigned int user_settings_changed = 0;
 
 
 static void sig_exit(void)
 {
         quitting = TRUE;
+}
+
+static void sig_settings_userinfo_changed(gpointer changedp)
+{
+	user_settings_changed = GPOINTER_TO_UINT(changedp);
 }
 
 /* redraw irssi's screen.. */
@@ -161,6 +155,7 @@ static void textui_init(void)
 	fe_common_irc_init();
 
 	theme_register(gui_text_formats);
+	signal_add("settings userinfo changed", (SIGNAL_FUNC) sig_settings_userinfo_changed);
 	signal_add_last("gui exit", (SIGNAL_FUNC) sig_exit);
 }
 
@@ -175,6 +170,7 @@ static void textui_finish_init(void)
 	gui_expandos_init();
 	gui_printtext_init();
 	gui_readline_init();
+	gui_entry_init();
 	lastlog_init();
 	mainwindows_init();
 	mainwindow_activity_init();
@@ -192,6 +188,10 @@ static void textui_finish_init(void)
 	fe_perl_init();
 #endif
 
+#ifdef HAVE_STATIC_OTR
+	otr_core_init();
+#endif
+
 	dirty_check();
 
 	fe_common_core_finish_init();
@@ -199,14 +199,26 @@ static void textui_finish_init(void)
 	statusbar_redraw(NULL, TRUE);
 
 	if (servers == NULL && lookup_servers == NULL) {
-		printtext(NULL, NULL, MSGLEVEL_CRAP|MSGLEVEL_NO_ACT,
-			  "%s", banner_text);
+		printformat(NULL, NULL, MSGLEVEL_CRAP|MSGLEVEL_NO_ACT, TXT_IRSSI_BANNER);
 	}
 
 	if (display_firsttimer) {
-		printtext(NULL, NULL, MSGLEVEL_CRAP|MSGLEVEL_NO_ACT,
-			  "%s", firsttimer_text);
+		printformat(NULL, NULL, MSGLEVEL_CRAP|MSGLEVEL_NO_ACT, TXT_WELCOME_FIRSTTIME);
 	}
+
+	/* see irc-servers-setup.c:init_userinfo */
+	if (user_settings_changed)
+		printformat(NULL, NULL, MSGLEVEL_CLIENTNOTICE, TXT_WELCOME_INIT_SETTINGS);
+	if (user_settings_changed & USER_SETTINGS_REAL_NAME)
+		fe_settings_set_print("real_name");
+	if (user_settings_changed & USER_SETTINGS_USER_NAME)
+		fe_settings_set_print("user_name");
+	if (user_settings_changed & USER_SETTINGS_NICK)
+		fe_settings_set_print("nick");
+	if (user_settings_changed & USER_SETTINGS_HOSTNAME)
+		fe_settings_set_print("hostname");
+
+	term_environment_check();
 }
 
 static void textui_deinit(void)
@@ -218,15 +230,21 @@ static void textui_deinit(void)
 		module_unload(modules->data);
 
 #ifdef HAVE_STATIC_PERL
-        perl_core_deinit();
-        fe_perl_deinit();
+	perl_core_deinit();
+	fe_perl_deinit();
 #endif
 
-        dirty_check(); /* one last time to print any quit messages */
+#ifdef HAVE_STATIC_OTR
+	otr_core_deinit();
+#endif
+
+	dirty_check(); /* one last time to print any quit messages */
+	signal_remove("settings userinfo changed", (SIGNAL_FUNC) sig_settings_userinfo_changed);
 	signal_remove("gui exit", (SIGNAL_FUNC) sig_exit);
 
 	lastlog_deinit();
 	statusbar_deinit();
+	gui_entry_deinit();
 	gui_printtext_deinit();
 	gui_readline_deinit();
 	gui_windows_deinit();
@@ -259,12 +277,11 @@ static void check_files(void)
 	}
 }
 
-
 int main(int argc, char **argv)
 {
 	static int version = 0;
 	static GOptionEntry options[] = {
-		{ "version", 'v', 0, G_OPTION_ARG_NONE, &version, "Display irssi version", NULL },
+		{ "version", 'v', 0, G_OPTION_ARG_NONE, &version, "Display Irssi version", NULL },
 		{ NULL }
 	};
 	int loglev;
@@ -317,22 +334,22 @@ int main(int argc, char **argv)
 	/* Does the same as g_main_run(main_loop), except we
 	   can call our dirty-checker after each iteration */
 	while (!quitting) {
-		term_refresh_freeze();
-		g_main_iteration(TRUE);
-                term_refresh_thaw();
-
 		if (reload_config) {
-                        /* SIGHUP received, do /RELOAD */
+			/* SIGHUP received, do /RELOAD */
 			reload_config = FALSE;
-                        signal_emit("command reload", 1, "");
+			signal_emit("command reload", 1, "");
 		}
 
 		dirty_check();
+
+		term_refresh_freeze();
+		g_main_iteration(TRUE);
+		term_refresh_thaw();
 	}
 
 	g_main_destroy(main_loop);
 	textui_deinit();
 
-        session_upgrade(); /* if we /UPGRADEd, start the new process */
+	session_upgrade(); /* if we /UPGRADEd, start the new process */
 	return 0;
 }

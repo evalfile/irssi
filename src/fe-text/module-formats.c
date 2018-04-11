@@ -41,8 +41,8 @@ FORMAT_REC gui_text_formats[] =
 	{ "refnum_not_found", "Window number $0 not found", 1, { 0 } },
 	{ "window_too_small", "Not enough room to resize this window", 0 },
 	{ "cant_hide_last", "You can't hide the last window", 0 },
-	{ "cant_hide_sticky_windows", "You can't hide sticky windows (use /WINDOW STICK OFF)", 0 },
-	{ "cant_show_sticky_windows", "You can't show sticky windows (use /WINDOW STICK OFF)", 0 },
+	{ "cant_hide_sticky_windows", "You can't hide sticky windows (use /SET autounstick_windows ON)", 0 },
+	{ "cant_show_sticky_windows", "You can't show sticky windows (use /SET autounstick_windows ON)", 0 },
 	{ "window_not_sticky", "Window is not sticky", 0 },
 	{ "window_set_sticky", "Window set sticky", 0 },
 	{ "window_unset_sticky", "Window is not sticky anymore", 0 },
@@ -50,6 +50,7 @@ FORMAT_REC gui_text_formats[] =
 	{ "window_info_scroll", "%#Scroll  : $0", 1, { 0 } },
 	{ "window_scroll", "Window scroll mode is now $0", 1, { 0 } },
 	{ "window_scroll_unknown", "Unknown scroll mode $0, must be ON, OFF or DEFAULT", 1, { 0 } },
+	{ "window_hidelevel", "Window hidden level is now $0", 1, { 0 } },
 
 	/* ---- */
 	{ NULL, "Statusbars", 0 },
@@ -66,6 +67,7 @@ FORMAT_REC gui_text_formats[] =
 	{ "statusbar_info_item_footer", "", 0 },
 	{ "statusbar_info_item_name",  "%#         : $[35]0 $[9]1 $2", 3, { 0, 1, 0 } },
 	{ "statusbar_not_found", "Statusbar doesn't exist: $0", 1, { 0 } },
+	{ "statusbar_not_found", "Statusbar is disabled: $0", 1, { 0 } },
 	{ "statusbar_item_not_found", "Statusbar item doesn't exist: $0", 1, { 0 } },
 	{ "statusbar_unknown_command", "Unknown statusbar command: $0", 1, { 0 } },
 	{ "statusbar_unknown_type", "Statusbar type must be 'window' or 'root'", 1, { 0 } },
@@ -77,6 +79,27 @@ FORMAT_REC gui_text_formats[] =
 
 	{ "paste_warning", "Pasting $0 lines to $1. Press Ctrl-K if you wish to do this or Ctrl-C to cancel.", 2, { 1, 0 } },
 	{ "paste_prompt", "Hit Ctrl-K to paste, Ctrl-C to abort?", 0 },
+
+	/* ---- */
+	{ NULL, "Welcome", 0 },
+
+	{ "irssi_banner",
+	  " ___           _%:"
+	  "|_ _|_ _ _____(_)%:"
+	  " | || '_(_-<_-< |%:"
+	  "|___|_| /__/__/_|%:"
+	  "Irssi v$J - https://irssi.org", 0 },
+	{ "welcome_firsttime",
+	  "- - - - - - - - - - - - - - - - - - - - - - - - - - - -\n"
+	  "Hi there! If this is your first time using Irssi, you%:"
+	  "might want to go to our website and read the startup%:"
+	  "documentation to get you going.%:%:"
+	  "Our community and staff are available to assist you or%:"
+	  "to answer any questions you may have.%:%:"
+	  "Use the /HELP command to get detailed information about%:"
+	  "the available commands.%:"
+	  "- - - - - - - - - - - - - - - - - - - - - - - - - - - -", 0 },
+	{ "welcome_init_settings", "The following settings were initialized", 0 },
 
 	{ NULL, NULL, 0 }
 };

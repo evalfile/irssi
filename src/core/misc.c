@@ -22,10 +22,6 @@
 #include "misc.h"
 #include "commands.h"
 
-#ifndef USE_GREGEX
-#  include <regex.h>
-#endif
-
 typedef struct {
 	int condition;
 	GInputFunction function;
@@ -218,6 +214,19 @@ GSList *gslist_remove_string (GSList *list, const char *str)
 	l = g_slist_find_custom(list, str, (GCompareFunc) g_strcmp0);
 	if (l != NULL)
 		return g_slist_remove_link(list, l);
+
+	return list;
+}
+
+GSList *gslist_delete_string (GSList *list, const char *str, GDestroyNotify free_func)
+{
+	GSList *l;
+
+	l = g_slist_find_custom(list, str, (GCompareFunc) g_strcmp0);
+	if (l != NULL) {
+		free_func(l->data);
+		return g_slist_delete_link(list, l);
+	}
 
 	return list;
 }
@@ -560,6 +569,9 @@ char *my_asctime(time_t t)
         int len;
 
 	tm = localtime(&t);
+	if (tm == NULL)
+	    return g_strdup("???");
+
 	str = g_strdup(asctime(tm));
 
 	len = strlen(str);
@@ -690,6 +702,8 @@ int expand_escape(const char **data)
 		return '\n';
 	case 'e':
 		return 27; /* ESC */
+	case '\\':
+		return '\\';
 
 	case 'x':
                 /* hex digit */
@@ -702,8 +716,11 @@ int expand_escape(const char **data)
 		*data += 2;
 		return strtol(digit, NULL, 16);
 	case 'c':
-                /* control character (\cA = ^A) */
-                (*data)++;
+		/* check for end of string */
+		if ((*data)[1] == '\0')
+			return 0;
+		/* control character (\cA = ^A) */
+		(*data)++;
 		return i_toupper(**data) - 64;
 	case '0': case '1': case '2': case '3':
 	case '4': case '5': case '6': case '7':
@@ -748,27 +765,73 @@ int nearest_power(int num)
 	return n;
 }
 
-int parse_time_interval(const char *time, int *msecs)
+/* Parses unsigned integers from strings with decent error checking.
+ * Returns true on success, false otherwise (overflow, no valid number, etc)
+ * There's a 31 bit limit so the output can be assigned to signed positive ints */
+int parse_uint(const char *nptr, char **endptr, int base, guint *number)
+{
+	char *endptr_;
+	gulong parsed;
+
+	/* strtoul accepts whitespace and plus/minus signs, for some reason */
+	if (!i_isdigit(*nptr)) {
+		return FALSE;
+	}
+
+	errno = 0;
+	parsed = strtoul(nptr, &endptr_, base);
+
+	if (errno || endptr_ == nptr || parsed >= (1U << 31)) {
+		return FALSE;
+	}
+
+	if (endptr) {
+		*endptr = endptr_;
+	}
+
+	if (number) {
+		*number = (guint) parsed;
+	}
+
+	return TRUE;
+}
+
+static int parse_number_sign(const char *input, char **endptr, int *sign)
+{
+	int sign_ = 1;
+
+	while (i_isspace(*input))
+		input++;
+
+	if (*input == '-') {
+		sign_ = -sign_;
+		input++;
+	}
+
+	*sign = sign_;
+	*endptr = (char *) input;
+	return TRUE;
+}
+
+static int parse_time_interval_uint(const char *time, guint *msecs)
 {
 	const char *desc;
-	int number, sign, len, ret, digits;
+	guint number;
+	int len, ret, digits;
 
 	*msecs = 0;
 
 	/* max. return value is around 24 days */
-	number = 0; sign = 1; ret = TRUE; digits = FALSE;
+	number = 0; ret = TRUE; digits = FALSE;
 	while (i_isspace(*time))
 		time++;
-	if (*time == '-') {
-		sign = -sign;
-		time++;
-		while (i_isspace(*time))
-			time++;
-	}
 	for (;;) {
 		if (i_isdigit(*time)) {
-			number = number*10 + (*time - '0');
-			time++;
+			char *endptr;
+			if (!parse_uint(time, &endptr, 10, &number)) {
+				return FALSE;
+			}
+			time = endptr;
 			digits = TRUE;
 			continue;
 		}
@@ -791,7 +854,6 @@ int parse_time_interval(const char *time, int *msecs)
 			if (*time != '\0')
 				return FALSE;
 			*msecs += number * 1000; /* assume seconds */
-			*msecs *= sign;
 			return TRUE;
 		}
 
@@ -829,14 +891,14 @@ int parse_time_interval(const char *time, int *msecs)
 		digits = FALSE;
 	}
 
-	*msecs *= sign;
 	return ret;
 }
 
-int parse_size(const char *size, int *bytes)
+static int parse_size_uint(const char *size, guint *bytes)
 {
 	const char *desc;
-	int number, len;
+	guint number, multiplier, limit;
+	int len;
 
 	*bytes = 0;
 
@@ -844,8 +906,11 @@ int parse_size(const char *size, int *bytes)
 	number = 0;
 	while (*size != '\0') {
 		if (i_isdigit(*size)) {
-			number = number*10 + (*size - '0');
-			size++;
+			char *endptr;
+			if (!parse_uint(size, &endptr, 10, &number)) {
+				return FALSE;
+			}
+			size = endptr;
 			continue;
 		}
 
@@ -867,14 +932,31 @@ int parse_size(const char *size, int *bytes)
 			return FALSE;
 		}
 
-		if (g_ascii_strncasecmp(desc, "gbytes", len) == 0)
-			*bytes += number * 1024*1024*1024;
-		if (g_ascii_strncasecmp(desc, "mbytes", len) == 0)
-			*bytes += number * 1024*1024;
-		if (g_ascii_strncasecmp(desc, "kbytes", len) == 0)
-			*bytes += number * 1024;
-		if (g_ascii_strncasecmp(desc, "bytes", len) == 0)
-			*bytes += number;
+		multiplier = 0;
+		limit = 0;
+
+		if (g_ascii_strncasecmp(desc, "gbytes", len) == 0) {
+			multiplier = 1U << 30;
+			limit = 2U << 0;
+		}
+		if (g_ascii_strncasecmp(desc, "mbytes", len) == 0) {
+			multiplier = 1U << 20;
+			limit = 2U << 10;
+		}
+		if (g_ascii_strncasecmp(desc, "kbytes", len) == 0) {
+			multiplier = 1U << 10;
+			limit = 2U << 20;
+		}
+		if (g_ascii_strncasecmp(desc, "bytes", len) == 0) {
+			multiplier = 1;
+			limit = 2U << 30;
+		}
+
+		if (limit && number > limit) {
+			return FALSE;
+		}
+
+		*bytes += number * multiplier;
 
 		/* skip punctuation */
 		while (*size != '\0' && i_ispunct(*size))
@@ -883,6 +965,40 @@ int parse_size(const char *size, int *bytes)
 
 	return TRUE;
 }
+
+int parse_size(const char *size, int *bytes)
+{
+	guint bytes_;
+	int ret;
+
+	ret = parse_size_uint(size, &bytes_);
+
+	if (bytes_ > (1U << 31)) {
+		return FALSE;
+	}
+
+	*bytes = bytes_;
+	return ret;
+}
+
+int parse_time_interval(const char *time, int *msecs)
+{
+	guint msecs_;
+	char *number;
+	int ret, sign;
+
+	parse_number_sign(time, &number, &sign);
+
+	ret = parse_time_interval_uint(number, &msecs_);
+
+	if (msecs_ > (1U << 31)) {
+		return FALSE;
+	}
+
+	*msecs = msecs_ * sign;
+	return ret;
+}
+
 
 char *ascii_strup(char *str)
 {

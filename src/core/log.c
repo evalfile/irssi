@@ -26,6 +26,9 @@
 #include "servers.h"
 #include "log.h"
 #include "write-buffer.h"
+#ifdef HAVE_CAPSICUM
+#include "capsicum.h"
+#endif
 
 #include "lib-config/iconfig.h"
 #include "settings.h"
@@ -33,6 +36,8 @@
 #define DEFAULT_LOG_FILE_CREATE_MODE 600
 
 GSList *logs;
+int log_file_create_mode;
+int log_dir_create_mode;
 
 static const char *log_item_types[] = {
 	"target",
@@ -42,8 +47,6 @@ static const char *log_item_types[] = {
 };
 
 static char *log_timestamp;
-static int log_file_create_mode;
-static int log_dir_create_mode;
 static int rotate_tag;
 
 static int log_item_str2type(const char *type)
@@ -114,13 +117,23 @@ int log_start_logging(LOG_REC *log)
 		/* path may contain variables (%time, $vars),
 		   make sure the directory is created */
 		dir = g_path_get_dirname(log->real_fname);
+#ifdef HAVE_CAPSICUM
+		capsicum_mkdir_with_parents_wrapper(dir, log_dir_create_mode);
+#else
 		g_mkdir_with_parents(dir, log_dir_create_mode);
+#endif
 		g_free(dir);
 	}
 
+#ifdef HAVE_CAPSICUM
+	log->handle = log->real_fname == NULL ? -1 :
+		capsicum_open_wrapper(log->real_fname, O_WRONLY | O_APPEND | O_CREAT,
+		     log_file_create_mode);
+#else
 	log->handle = log->real_fname == NULL ? -1 :
 		open(log->real_fname, O_WRONLY | O_APPEND | O_CREAT,
 		     log_file_create_mode);
+#endif
 	if (log->handle == -1) {
 		signal_emit("log create failed", 1, log);
 		log->failed = TRUE;
@@ -562,7 +575,6 @@ static void read_settings(void)
 	log_timestamp = g_strdup(settings_get_str("log_timestamp"));
 
 	log_file_create_mode = octal2dec(settings_get_int("log_create_mode"));
-
 	log_dir_create_mode = log_file_create_mode;
 	if (log_file_create_mode & 0400) log_dir_create_mode |= 0100;
 	if (log_file_create_mode & 0040) log_dir_create_mode |= 0010;

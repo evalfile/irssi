@@ -11,7 +11,6 @@ config.status
 configure
 default-config.h
 default-theme.h
-faq.txt
 irssi-config
 irssi-config.h
 irssi-config.h.in
@@ -33,6 +32,8 @@ docs/help/in/Makefile.am
 
 src/fe-text/irssi
 src/fe-fuzz/irssi-fuzz
+src/fe-fuzz/irc/core/event-get-params-fuzz
+src/fe-fuzz/fe-common/core/theme-load-fuzz
 
 src/fe-common/irc/irc-modules.c
 src/irc/irc.c
@@ -49,6 +50,9 @@ src/perl/*/Makefile.old
 
 src/fe-fuzz/crash-*
 src/fe-fuzz/oom-*
+
+tests/irc/core/test-irc
+tests/irc/core/test-irc.trs
 
 *.a
 *.bs

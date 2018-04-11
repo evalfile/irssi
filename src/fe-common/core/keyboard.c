@@ -35,6 +35,7 @@
 
 GSList *keyinfos;
 static GHashTable *keys, *default_keys;
+static int key_timeout;
 
 /* A cache of some sort for key presses that generate a single char only.
    If the key isn't used, used_keys[key] is zero. */
@@ -48,7 +49,8 @@ static int key_config_frozen;
 
 struct _KEYBOARD_REC {
 	char *key_state; /* the ongoing key combo */
-        void *gui_data; /* GUI specific data sent in "key pressed" signal */
+	guint timer_tag; /* used to check when a pending combo has expired */
+	void *gui_data; /* GUI specific data sent in "key pressed" signal */
 };
 
 /* Creates a new "keyboard" - this is used only for keeping track of
@@ -60,6 +62,7 @@ KEYBOARD_REC *keyboard_create(void *data)
 
 	rec = g_new0(KEYBOARD_REC, 1);
 	rec->gui_data = data;
+	rec->timer_tag = 0;
 
 	signal_emit("keyboard created", 1, rec);
         return rec;
@@ -68,6 +71,11 @@ KEYBOARD_REC *keyboard_create(void *data)
 /* Destroys a keyboard */
 void keyboard_destroy(KEYBOARD_REC *keyboard)
 {
+	if (keyboard->timer_tag > 0) {
+		g_source_remove(keyboard->timer_tag);
+		keyboard->timer_tag = 0;
+	}
+
 	signal_emit("keyboard destroyed", 1, keyboard);
 
         g_free_not_null(keyboard->key_state);
@@ -148,6 +156,7 @@ static void keyconfig_save(const char *id, const char *key, const char *data)
 static void keyconfig_clear(const char *key)
 {
 	CONFIG_NODE *node;
+	KEY_REC *rec;
 
 	g_return_if_fail(key != NULL);
 
@@ -156,6 +165,11 @@ static void keyconfig_clear(const char *key)
 	if (node != NULL) {
 		iconfig_node_remove(iconfig_node_traverse("(keyboard", FALSE),
 				    node);
+	}
+	if ((rec = g_hash_table_lookup(default_keys, key)) != NULL) {
+		node = iconfig_node_traverse("(keyboard", TRUE);
+		node = iconfig_node_section(node, NULL, NODE_TYPE_BLOCK);
+		iconfig_node_set_str(node, "key", key);
 	}
 }
 
@@ -561,11 +575,36 @@ void key_configure_remove(const char *key)
 
 	g_return_if_fail(key != NULL);
 
+	keyconfig_clear(key);
+
 	rec = g_hash_table_lookup(keys, key);
 	if (rec == NULL) return;
 
-        keyconfig_clear(key);
 	key_configure_destroy(rec);
+}
+
+/* Reset key to default */
+void key_configure_reset(const char *key)
+{
+	KEY_REC *rec;
+	CONFIG_NODE *node;
+
+	g_return_if_fail(key != NULL);
+
+	node = key_config_find(key);
+	if (node != NULL) {
+		iconfig_node_remove(iconfig_node_traverse("(keyboard", FALSE), node);
+	}
+
+	if ((rec = g_hash_table_lookup(default_keys, key)) != NULL) {
+		key_configure_create(rec->info->id, rec->key, rec->data);
+	} else {
+		rec = g_hash_table_lookup(keys, key);
+		if (rec == NULL)
+			return;
+
+		key_configure_destroy(rec);
+	}
 }
 
 static int key_emit_signal(KEYBOARD_REC *keyboard, KEY_REC *key)
@@ -592,6 +631,25 @@ static int key_states_search(const unsigned char *combo,
         return 0;
 }
 
+static gboolean key_timeout_expired(KEYBOARD_REC *keyboard)
+{
+	KEY_REC *rec;
+
+	keyboard->timer_tag = 0;
+
+	/* So, the timeout has expired with the input queue full, let's see if
+	 * what we've got is bound to some action. */
+	rec = g_tree_lookup(key_states, keyboard->key_state);
+	/* Drain the queue anyway. */
+	g_free_and_null(keyboard->key_state);
+
+	if (rec != NULL) {
+		(void)key_emit_signal(keyboard, rec);
+	}
+
+	return FALSE;
+}
+
 int key_pressed(KEYBOARD_REC *keyboard, const char *key)
 {
 	KEY_REC *rec;
@@ -600,6 +658,11 @@ int key_pressed(KEYBOARD_REC *keyboard, const char *key)
 
 	g_return_val_if_fail(keyboard != NULL, FALSE);
 	g_return_val_if_fail(key != NULL && *key != '\0', FALSE);
+
+	if (keyboard->timer_tag > 0) {
+		g_source_remove(keyboard->timer_tag);
+		keyboard->timer_tag = 0;
+	}
 
 	if (keyboard->key_state == NULL && key[1] == '\0' &&
 	    !used_keys[(int) (unsigned char) key[0]]) {
@@ -625,6 +688,13 @@ int key_pressed(KEYBOARD_REC *keyboard, const char *key)
 	if (g_tree_lookup(key_states, combo) != rec) {
 		/* key combo continues.. */
 		keyboard->key_state = combo;
+		/* respect the timeout if specified by the user */
+		if (key_timeout > 0) {
+			keyboard->timer_tag =
+				g_timeout_add(key_timeout,
+					      (GSourceFunc) key_timeout_expired,
+					      keyboard);
+		}
                 return 0;
 	}
 
@@ -700,7 +770,9 @@ static void cmd_show_keys(const char *searchkey, int full)
 		for (key = rec->keys; key != NULL; key = key->next) {
 			KEY_REC *rec = key->data;
 
-			if ((len == 0 || g_ascii_strncasecmp(rec->key, searchkey, len) == 0) &&
+			if ((len == 0 ||
+			     (full ? strncmp(rec->key, searchkey, len) == 0 :
+			             g_ascii_strncasecmp(rec->key, searchkey, len) == 0)) &&
 			    (!full || rec->key[len] == '\0')) {
 				printformat(NULL, NULL, MSGLEVEL_CLIENTCRAP, TXT_BIND_LIST,
 					    rec->key, rec->info->id, rec->data == NULL ? "" : rec->data);
@@ -711,7 +783,7 @@ static void cmd_show_keys(const char *searchkey, int full)
 	printformat(NULL, NULL, MSGLEVEL_CLIENTCRAP, TXT_BIND_FOOTER);
 }
 
-/* SYNTAX: BIND [-list] [-delete] [<key> [<command> [<data>]]] */
+/* SYNTAX: BIND [-list] [-delete | -reset] [<key> [<command> [<data>]]] */
 static void cmd_bind(const char *data)
 {
 	GHashTable *optlist;
@@ -739,6 +811,12 @@ static void cmd_bind(const char *data)
 	if (*key != '\0' && g_hash_table_lookup(optlist, "delete")) {
                 /* delete key */
 		key_configure_remove(key);
+		cmd_params_free(free_arg);
+		return;
+	} else if (*key != '\0' && g_hash_table_lookup(optlist, "reset")) {
+		/* reset key */
+		key_configure_reset(key);
+		cmd_show_keys(key, TRUE);
 		cmd_params_free(free_arg);
 		return;
 	}
@@ -839,8 +917,13 @@ static void key_config_read(CONFIG_NODE *node)
 	id = config_node_get_str(node, "id", NULL);
 	data = config_node_get_str(node, "data", NULL);
 
-	if (key != NULL && id != NULL)
+	if (key != NULL && id != NULL) {
 		key_configure_create(id, key, data);
+	} else if (key != NULL && id == NULL && data == NULL) {
+		KEY_REC *rec = g_hash_table_lookup(keys, key);
+		if (rec != NULL)
+			key_configure_destroy(rec);
+	}
 }
 
 static void read_keyboard_config(void)
@@ -870,6 +953,9 @@ static void read_keyboard_config(void)
 		key_config_read(tmp->data);
 
         key_configure_thaw();
+
+	/* any positive value other than 0 enables the timeout (in ms). */
+	key_timeout = settings_get_int("key_timeout");
 }
 
 void keyboard_init(void)
@@ -883,6 +969,8 @@ void keyboard_init(void)
         key_config_frozen = 0;
 	memset(used_keys, 0, sizeof(used_keys));
 
+	settings_add_int("misc", "key_timeout", 0);
+
 	key_bind("command", "Run any command", NULL, NULL, (SIGNAL_FUNC) sig_command);
 	key_bind("key", "Specify name for key binding", NULL, NULL, (SIGNAL_FUNC) sig_key);
 	key_bind("multi", "Run multiple commands", NULL, NULL, (SIGNAL_FUNC) sig_multi);
@@ -894,7 +982,7 @@ void keyboard_init(void)
 	signal_add("complete command bind", (SIGNAL_FUNC) sig_complete_bind);
 
 	command_bind("bind", NULL, (SIGNAL_FUNC) cmd_bind);
-	command_set_options("bind", "delete list");
+	command_set_options("bind", "delete reset list");
 }
 
 void keyboard_deinit(void)

@@ -278,9 +278,9 @@ static void cmd_channel_add_modify(const char *data, gboolean add)
 	rec = channel_setup_find(channel, chatnet);
 	if (rec == NULL) {
 		if (add == FALSE) {
-			cmd_params_free(free_arg);
 			printformat(NULL, NULL, MSGLEVEL_CLIENTNOTICE,
 				TXT_CHANSETUP_NOT_FOUND, channel, chatnet);
+			cmd_params_free(free_arg);
 			return;
 		}
 
@@ -453,7 +453,7 @@ static void display_sorted_nicks(CHANNEL_REC *channel, GSList *nicklist)
 		}
 	}
 
-	if (str->len > strlen(prefix_format)) {
+	if (prefix_format != NULL && str->len > strlen(prefix_format)) {
 		printtext(channel->server, channel->visible_name,
 		          MSGLEVEL_CLIENTCRAP, "%s", str->str);
 	}

@@ -1,7 +1,9 @@
+SUBDIRS = irc fe-common
+
 bin_PROGRAMS = irssi-fuzz
 
-# Force link with clang++ for libfuzzer support
-CCLD=clang++ $(CXXFLAGS)
+# Force link with CXX for libfuzzer support
+CCLD=$(CXX) $(CXXFLAGS)
 
 AM_CPPFLAGS = \
 	-I$(top_srcdir)/src \
