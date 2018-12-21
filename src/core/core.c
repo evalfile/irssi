@@ -29,6 +29,9 @@
 #include "signals.h"
 #include "settings.h"
 #include "session.h"
+#ifdef HAVE_CAPSICUM
+#include "capsicum.h"
+#endif
 
 #include "chat-protocols.h"
 #include "servers.h"
@@ -56,6 +59,9 @@ void chat_commands_deinit(void);
 
 void log_away_init(void);
 void log_away_deinit(void);
+
+void wcwidth_wrapper_init(void);
+void wcwidth_wrapper_deinit(void);
 
 int irssi_gui;
 int irssi_init_finished;
@@ -235,6 +241,9 @@ void core_init(void)
 	commands_init();
 	nickmatch_cache_init();
         session_init();
+#ifdef HAVE_CAPSICUM
+	capsicum_init();
+#endif
 
 	chat_protocols_init();
 	chatnets_init();
@@ -252,6 +261,7 @@ void core_init(void)
 	nicklist_init();
 
 	chat_commands_init();
+	wcwidth_wrapper_init();
 
 	settings_add_str("misc", "ignore_signals", "");
 	settings_add_bool("misc", "override_coredump_limit", FALSE);
@@ -275,6 +285,7 @@ void core_deinit(void)
 	signal_remove("setup changed", (SIGNAL_FUNC) read_settings);
 	signal_remove("irssi init finished", (SIGNAL_FUNC) sig_irssi_init_finished);
 
+	wcwidth_wrapper_deinit();
 	chat_commands_deinit();
 
 	nicklist_deinit();
@@ -292,6 +303,9 @@ void core_deinit(void)
 	chatnets_deinit();
 	chat_protocols_deinit();
 
+#ifdef HAVE_CAPSICUM
+	capsicum_deinit();
+#endif
         session_deinit();
         nickmatch_cache_deinit();
 	commands_deinit();

@@ -58,13 +58,8 @@ static void ignore_print(int index, IGNORE_REC *rec)
 		g_string_append(options, "-regexp ");
 		if (rec->pattern == NULL)
 			g_string_append(options, "[INVALID! -pattern missing] ");
-#ifdef USE_GREGEX
 		else if (rec->preg == NULL)
 			g_string_append(options, "[INVALID!] ");
-#else
-		else if (!rec->regexp_compiled)
-			g_string_append(options, "[INVALID!] ");
-#endif
 	}
 	if (rec->fullword) g_string_append(options, "-full ");
 	if (rec->replies) g_string_append(options, "-replies ");
@@ -123,7 +118,7 @@ static void cmd_ignore(const char *data)
 	char *patternarg, *chanarg, *mask, *levels, *timestr, *servertag;
 	char **channels;
 	void *free_arg;
-	int new_ignore, msecs, level;
+	int new_ignore, msecs, level, flags;
 
 	if (*data == '\0') {
 		cmd_ignore_show();
@@ -161,8 +156,13 @@ static void cmd_ignore(const char *data)
 	channels = (chanarg == NULL || *chanarg == '\0') ? NULL :
 		g_strsplit(chanarg, ",", -1);
 
-	rec = ignore_find_full(servertag, mask, patternarg, channels,
-			  IGNORE_FIND_PATTERN | ((level & MSGLEVEL_NO_ACT) ? IGNORE_FIND_NOACT : 0));
+	flags = IGNORE_FIND_PATTERN;
+	if (level & MSGLEVEL_NO_ACT)
+		flags |= IGNORE_FIND_NOACT;
+	if (level & MSGLEVEL_HIDDEN)
+		flags |= IGNORE_FIND_HIDDEN;
+
+	rec = ignore_find_full(servertag, mask, patternarg, channels, flags);
 	new_ignore = rec == NULL;
 
 	if (rec == NULL) {
@@ -180,6 +180,12 @@ static void cmd_ignore(const char *data)
 
 	if (rec->level == MSGLEVEL_NO_ACT) {
 		/* If only NO_ACT was specified add all levels; it makes no
+		 * sense on its own. */
+		rec->level |= MSGLEVEL_ALL;
+	}
+
+	if (rec->level == MSGLEVEL_HIDDEN) {
+		/* If only HIDDEN was specified add all levels; it makes no
 		 * sense on its own. */
 		rec->level |= MSGLEVEL_ALL;
 	}

@@ -1,11 +1,11 @@
-AC_INIT(irssi, 1.1-head)
+AC_INIT(irssi, 1.2-head)
 AC_CONFIG_SRCDIR([src])
 AC_CONFIG_AUX_DIR(build-aux)
 AC_PREREQ(2.50)
 
 AC_CONFIG_HEADERS([irssi-config.h])
 AC_CONFIG_MACRO_DIR([m4])
-AM_INIT_AUTOMAKE([1.9 no-define foreign])
+AM_INIT_AUTOMAKE([1.9 no-define foreign subdir-objects])
 
 AM_SILENT_RULES([yes])
 
@@ -148,6 +148,21 @@ AC_ARG_WITH(perl,
 	fi,
 	want_perl=static)
 
+AC_ARG_WITH(otr,
+[  --with-otr[=yes|no|static]   Build with OTR support - also specifies
+                                if it should be built into the main irssi
+                                binary (static) or as a module (default)],
+	if test x$withval = xyes; then
+		want_otr=module
+	elif test x$withval = xstatic; then
+		want_otr=static
+	elif test x$withval = xmodule; then
+		want_otr=module
+	else
+		want_otr=no
+	fi,
+	want_otr=no)
+
 AC_ARG_ENABLE(true-color,
 [  --enable-true-color     Build with true color support in terminal],
 	if test x$enableval = xno ; then
@@ -158,13 +173,22 @@ AC_ARG_ENABLE(true-color,
 	want_truecolor=no)
 
 AC_ARG_ENABLE(gregex,
-[  --disable-gregex     Build without GRegex (fall back to regex.h)],
+[  --disable-gregex        Build without GRegex (fall back to regex.h)],
 	if test x$enableval = xno ; then
 		want_gregex=no
 	else
 		want_gregex=yes
 	fi,
 	want_gregex=yes)
+
+AC_ARG_WITH(capsicum,
+[  --with-capsicum         Build with Capsicum support],
+	if test x$withval = xno; then
+		want_capsicum=no
+	else
+		want_capsicum=yes
+	fi,
+	want_capsicum=yes)
 
 dnl **
 dnl ** just some generic stuff...
@@ -244,11 +268,6 @@ if test "x$want_socks" = "xyes"; then
 fi
 
 dnl **
-dnl ** OpenSSL checks
-dnl **
-AC_CHECK_LIB([ssl], [SSL_library_init])
-
-dnl **
 dnl ** fe-text checks
 dnl **
 
@@ -289,7 +308,28 @@ if test -z "$GLIB_LIBS"; then
   AC_ERROR([GLIB is required to build irssi.])
 fi
 
-LIBS="$LIBS $GLIB_LIBS -lssl -lcrypto"
+LIBS="$LIBS $GLIB_LIBS"
+
+GLIB_TESTS
+
+dnl **
+dnl ** OpenSSL checks
+dnl **
+PKG_CHECK_MODULES([OPENSSL], [openssl], [
+	CFLAGS="$CFLAGS $OPENSSL_CFLAGS"
+	LIBS="$LIBS $OPENSSL_LIBS"
+], [
+	AC_CHECK_LIB([ssl], [SSL_library_init], [
+		LIBS="$LIBS -lssl -lcrypto"
+	], [
+		AC_MSG_ERROR([The OpenSSL library was not found])
+	])
+])
+
+dnl **
+dnl ** utf8proc
+dnl **
+AC_CHECK_LIB([utf8proc], [utf8proc_version])
 
 dnl **
 dnl ** curses checks
@@ -299,7 +339,7 @@ if test "x$want_textui" != "xno"; then
 
 	TEXTUI_NO_LIBS="$LIBS"
 	LIBS=
-	AC_SEARCH_LIBS([setupterm], [tinfo ncursesw ncurses], [want_textui=yes], [
+	AC_SEARCH_LIBS([setupterm], [tinfo ncursesw ncurses terminfo], [want_textui=yes], [
 		AC_ERROR(Terminfo not found - install libncurses-dev or ncurses-devel package)
 		want_textui="no, Terminfo not found"
 	])
@@ -353,8 +393,8 @@ if test "$want_perl" != "no"; then
 		dnl * fix those command line options a bit so GCC won't
 		dnl * complain about them. Normally there's only few options
 		dnl * that we want to keep:
-		dnl * -Ddefine -Uundef -I/path -fopt -mopt
-		PERL_CFLAGS=`echo $PERL_CFLAGS | $perlpath -pe 's/^(.* )?-@<:@^DUIfm@:>@@<:@^ @:>@+/\1/g; s/^(.* )?\+@<:@^ @:>@+/\1/g'`
+		dnl * -Ddefine -Uundef -I/path -fopt -mopt -iwithsysroot
+		PERL_CFLAGS=`echo $PERL_CFLAGS | $perlpath -pe 's/^(.* )?-@<:@^DUIifm@:>@@<:@^ @:>@+/\1/g; s/^(.* )?\+@<:@^ @:>@+/\1/g'`
 
 		PERL_EXTRA_OPTS="CCCDLFLAGS=\"-fPIC\""
 		AC_SUBST(PERL_EXTRA_OPTS)
@@ -490,12 +530,74 @@ if test "$want_perl" != "no"; then
 	fi
 fi
 
+dnl **
+dnl ** check for capsicum
+dnl **
+
+if test "x$want_capsicum" = "xyes"; then
+	AC_CHECK_LIB(c, cap_enter, [
+		AC_CHECK_LIB(nv, nvlist_create, [
+			AC_DEFINE(HAVE_CAPSICUM,, Build with Capsicum support)
+			LIBS="$LIBS -lnv"
+		], [
+			want_capsicum="no, nvlist_create not found"
+		])
+	], [
+		want_capsicum="no, cap_enter not found"
+	])
+fi
+
+dnl **
+dnl ** OTR checks
+dnl **
+
+have_otr=no
+if test "x$want_otr" != "xno"; then
+	AM_PATH_LIBGCRYPT(1:1.2.0, [], [AC_ERROR(libgcrypt 1.2.0 or newer is required.)])
+	AM_PATH_LIBOTR(4.1.0, [], [AC_ERROR([libotr 4.1.0 or newer is required.])])
+
+	OTR_CFLAGS="$LIBOTR_CFLAGS $LIBGCRYPT_CFLAGS"
+	OTR_LDFLAGS="$LIBOTR_LIBS $LIBGCRYPT_LIBS"
+
+	AC_SUBST(otr_module_lib)
+	AC_SUBST(otr_static_lib)
+
+	if test "x$want_otr" != "xno"; then
+		if test "x$want_otr" = "xstatic"; then
+			otr_module_lib=
+			otr_static_lib=libotr_core_static.la
+
+			OTR_LINK_LIBS="../otr/libotr_core_static.la"
+			OTR_LINK_FLAGS="$OTR_LDFLAGS"
+
+			AC_DEFINE(HAVE_STATIC_OTR)
+		else
+			otr_module_lib=libotr_core.la
+			otr_static_lib=
+		fi
+	fi
+
+	AC_SUBST(otr_module_lib)
+	AC_SUBST(otr_static_lib)
+
+	AC_SUBST(OTR_CFLAGS)
+	AC_SUBST(OTR_LDFLAGS)
+
+	AC_SUBST(OTR_LINK_LIBS)
+	AC_SUBST(OTR_LINK_FLAGS)
+
+	have_otr=yes
+fi
+
 dnl ** check what we want to build
 AM_CONDITIONAL(BUILD_TEXTUI, test "$want_textui" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIBOT, test "$want_irssibot" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIFUZZER, test "$want_irssifuzzer" = "yes")
 AM_CONDITIONAL(BUILD_IRSSIPROXY, test "$want_irssiproxy" = "yes")
 AM_CONDITIONAL(HAVE_PERL, test "$want_perl" != "no")
+AM_CONDITIONAL(HAVE_CAPSICUM, test "x$want_capsicum" = "xyes")
+AM_CONDITIONAL(USE_GREGEX, test "x$want_gregex" = "xyes")
+AM_CONDITIONAL(HAVE_OTR, test "x$have_otr" != "xno")
 
 # move LIBS to PROG_LIBS so they're not tried to be used when linking eg. perl libraries
 PROG_LIBS=$LIBS
@@ -590,6 +692,7 @@ fi
 AH_TEMPLATE(HAVE_GMODULE)
 AH_TEMPLATE(HAVE_SOCKS_H, [misc..])
 AH_TEMPLATE(HAVE_STATIC_PERL)
+AH_TEMPLATE(HAVE_STATIC_OTR)
 AH_TEMPLATE(PRIuUOFF_T, [printf()-format for uoff_t, eg. "u" or "lu" or "llu"])
 AH_TEMPLATE(UOFF_T_INT, [What type should be used for uoff_t])
 AH_TEMPLATE(UOFF_T_LONG)
@@ -611,6 +714,10 @@ src/fe-common/irc/Makefile
 src/fe-common/irc/dcc/Makefile
 src/fe-common/irc/notifylist/Makefile
 src/fe-fuzz/Makefile
+src/fe-fuzz/irc/Makefile
+src/fe-fuzz/irc/core/Makefile
+src/fe-fuzz/fe-common/Makefile
+src/fe-fuzz/fe-common/core/Makefile
 src/fe-none/Makefile
 src/fe-text/Makefile
 src/lib-config/Makefile
@@ -619,11 +726,21 @@ src/perl/common/Makefile.PL
 src/perl/irc/Makefile.PL
 src/perl/ui/Makefile.PL
 src/perl/textui/Makefile.PL
+src/otr/Makefile
 scripts/Makefile
 scripts/examples/Makefile
+tests/Makefile
+tests/fe-common/Makefile
+tests/fe-common/core/Makefile
+tests/fe-text/Makefile
+tests/irc/Makefile
+tests/irc/core/Makefile
+tests/irc/flood/Makefile
 docs/Makefile
 docs/help/Makefile
 docs/help/in/Makefile
+utils/Makefile
+themes/Makefile
 irssi-config
 ])
 
@@ -703,6 +820,16 @@ echo
 echo "Building with 64bit DCC support .. : $offt_64bit"
 echo "Building with true color support.. : $want_truecolor"
 echo "Building with GRegex ............. : $want_gregex"
+echo "Building with Capsicum ........... : $want_capsicum"
+echo "Building with utf8proc ........... : $ac_cv_lib_utf8proc_utf8proc_version"
+if test "x$want_otr" = "xstatic"; then
+	echo "Building with OTR support ........ : static (in irssi binary)"
+elif test "x$want_otr" = "xmodule"; then
+	echo "Building with OTR support ........ : module"
+else
+	echo "Building with OTR support ........ : no"
+fi
+
 
 echo
 echo "If there are any problems, read the INSTALL file."

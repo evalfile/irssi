@@ -137,8 +137,9 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
         int old_startpos, old_wordlen;
 
 	GString *result;
-	char *word, *wordstart, *linestart, *ret;
-	int continue_complete, want_space;
+	const char *cmdchars;
+	char *word, *wordstart, *linestart, *ret, *data;
+	int continue_complete, want_space, expand_escapes;
 
 	g_return_val_if_fail(line != NULL, NULL);
 	g_return_val_if_fail(pos != NULL, NULL);
@@ -186,12 +187,18 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
 			char *old;
 
 			old = linestart;
-			linestart = *linestart == '\0' ?
-				g_strdup(word) :
-				g_strdup_printf("%s%c%s",
-						/* do not accidentally duplicate the word separator */
-						line == wordstart - 1 ? "" : linestart,
-						old_wordstart[-1], word);
+			/* we want to move word into linestart */
+			if (*linestart == '\0') {
+				linestart = g_strdup(word);
+			} else {
+				GString *str = g_string_new(linestart);
+				if (old_wordstart[-1] != str->str[str->len - 1]) {
+					/* do not accidentally duplicate the word separator */
+					g_string_append_c(str, old_wordstart[-1]);
+				}
+				g_string_append(str, word);
+				linestart = g_string_free(str, FALSE);
+			}
 			g_free(old);
 
 			g_free(word);
@@ -222,6 +229,7 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
 				g_list_first(complist);
 		want_space = last_want_space;
 	} else {
+		int keep_word = settings_get_bool("completion_keep_word");
 		/* get new completion list */
 		free_completions();
 
@@ -232,6 +240,17 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
 		if (complist != NULL) {
 			/* Remove all nulls (from the signal) before doing further processing */
 			complist = g_list_remove_all(g_list_first(complist), NULL);
+
+			if (keep_word) {
+				complist = g_list_append(complist, g_strdup(word));
+			}
+
+			if (backward) {
+				complist = g_list_last(complist);
+				if (keep_word) {
+					complist = complist->prev;
+				}
+			}
 		}
 	}
 
@@ -241,14 +260,24 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
 	if (complist == NULL)
 		return NULL;
 
+        /* get the cmd char */
+	cmdchars = settings_get_str("cmdchars");
+
+	/* get the expand_escapes setting */
+	expand_escapes = settings_get_bool("expand_escapes");
+
+	/* escape if the word doesn't begin with '/' and expand_escapes are turned on */
+	data = strchr(cmdchars, *line) == NULL && expand_escapes ?
+		escape_string(complist->data) : g_strdup(complist->data);
+
 	/* word completed */
-	*pos = startpos+strlen(complist->data);
+	*pos = startpos + strlen(data);
 
 	/* replace the word in line - we need to return
 	   a full new line */
 	result = g_string_new(line);
 	g_string_erase(result, startpos, wordlen);
-	g_string_insert(result, startpos, complist->data);
+	g_string_insert(result, startpos, data);
 
 	if (want_space) {
 		if (!isseparator(result->str[*pos]))
@@ -256,13 +285,17 @@ char *word_complete(WINDOW_REC *window, const char *line, int *pos, int erase, i
 		(*pos)++;
 	}
 
-	wordlen = strlen(complist->data);
+	wordlen = strlen(data);
 	last_line_pos = *pos;
 	g_free_not_null(last_line);
 	last_line = g_strdup(result->str);
 
 	ret = result->str;
 	g_string_free(result, FALSE);
+
+	/* free the data */
+	g_free(data);
+
 	return ret;
 }
 
@@ -306,6 +339,10 @@ GList *filename_complete(const char *path, const char *default_path)
 
 	g_return_val_if_fail(path != NULL, NULL);
 
+	if (path[0] == '\0') {
+	    return NULL;
+	}
+
 	list = NULL;
 
 	/* get directory part of the path - expand ~/ */
@@ -335,7 +372,14 @@ GList *filename_complete(const char *path, const char *default_path)
 		g_free_and_null(dir);
 	}
 
-	basename = g_path_get_basename(path);
+	len = strlen(path);
+	/* g_path_get_basename() returns the component before the last slash if
+	 * the path ends with a directory separator, that's not what we want */
+	if (len > 0 && path[len - 1] == G_DIR_SEPARATOR) {
+	    basename = g_strdup("");
+	} else {
+	    basename = g_path_get_basename(path);
+	}
 	len = strlen(basename);
 
 	/* add all files in directory to completion list */
@@ -784,6 +828,7 @@ static void sig_complete_command(GList **list, WINDOW_REC *window,
 	if (*list != NULL) signal_stop();
 }
 
+/* SYNTAX: COMPLETION [-auto] [-delete] <key> <value> */
 static void cmd_completion(const char *data)
 {
 	GHashTable *optlist;
@@ -864,6 +909,7 @@ void completion_init(void)
 
 	chat_completion_init();
 
+	settings_add_bool("completion", "completion_keep_word", TRUE);
 	command_bind("completion", NULL, (SIGNAL_FUNC) cmd_completion);
 
 	signal_add_first("complete word", (SIGNAL_FUNC) sig_complete_word);

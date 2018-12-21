@@ -33,6 +33,7 @@
 #include "themes.h"
 #include "recode.h"
 #include "utf8.h"
+#include "misc.h"
 
 static const char *format_backs = "04261537";
 static const char *format_fores = "kbgcrmyw";
@@ -479,27 +480,30 @@ int format_real_length(const char *str, int len)
 
 	start = str;
 	tmp = g_string_new(NULL);
-	while (*str != '\0' && len > 0) {
+	while (*str != '\0') {
+		oldstr = str;
 		if (*str == '%' && str[1] != '\0') {
 			str++;
 			if (*str != '%') {
 			     adv = format_expand_styles(tmp, &str, NULL);
-			     str += adv;
-			     if (adv)
-				continue;
-			}
-
-			/* %% or unknown %code, written as-is */
-			if (*str != '%') {
-				if (--len == 0)
-					break;
+			     if (adv) {
+				     str += adv;
+				     continue;
+			     }
+			     /* discount for unknown % */
+			     if (--len < 0) {
+				     str = oldstr;
+				     break;
+			     }
+			     oldstr = str;
 			}
 		}
 
-		oldstr = str;
 		len -= string_advance(&str, utf8);
-		if (len < 0)
+		if (len < 0) {
 			str = oldstr;
+			break;
+		}
 	}
 
 	g_string_free(tmp, TRUE);
@@ -870,8 +874,9 @@ static const char *get_ansi_color(THEME_REC *theme, const char *str,
 {
 	static char ansitab[8] = { 0, 4, 2, 6, 1, 5, 3, 7 };
 	const char *start;
-	int fg, bg, flags, num, i;
-	unsigned int num2;
+	char *endptr;
+	int fg, bg, flags, i;
+	guint num, num2;
 
 	if (*str != '[')
 		return str;
@@ -886,8 +891,10 @@ static const char *get_ansi_color(THEME_REC *theme, const char *str,
 		if (*str == '\0') return start;
 
 		if (i_isdigit(*str)) {
-			num = num*10 + (*str-'0');
-			continue;
+			if (!parse_uint(str, &endptr, 10, &num)) {
+				return start;
+			}
+			str = endptr;
 		}
 
 		if (*str != ';' && *str != 'm')
@@ -958,8 +965,12 @@ static const char *get_ansi_color(THEME_REC *theme, const char *str,
 			/* ANSI indexed color or RGB color */
 			if (*str != ';') break;
 			str++;
-			for (num2 = 0; i_isdigit(*str); str++)
-				num2 = num2*10 + (*str-'0');
+
+			if (!parse_uint(str, &endptr, 10, &num2)) {
+				return start;
+			}
+			str = endptr;
+
 			if (*str == '\0') return start;
 
 			switch (num2) {
@@ -1006,8 +1017,12 @@ static const char *get_ansi_color(THEME_REC *theme, const char *str,
 				/* indexed */
 				if (*str != ';') break;
 				str++;
-				for (num2 = 0; i_isdigit(*str); str++)
-					num2 = num2*10 + (*str-'0');
+
+				if (!parse_uint(str, &endptr, 10, &num2)) {
+					return start;
+				}
+				str = endptr;
+
 				if (*str == '\0') return start;
 
 				if (num == 38) {
@@ -1060,31 +1075,27 @@ static void get_mirc_color(const char **str, int *fg_ret, int *bg_ret)
 	fg = fg_ret == NULL ? -1 : *fg_ret;
 	bg = bg_ret == NULL ? -1 : *bg_ret;
 
-	if (!i_isdigit(**str) && **str != ',') {
+	if (!i_isdigit(**str)) {
+		/* turn off color */
 		fg = -1;
 		bg = -1;
 	} else {
 		/* foreground color */
-		if (**str != ',') {
-			fg = **str-'0';
+		fg = **str-'0';
+		(*str)++;
+		if (i_isdigit(**str)) {
+			fg = fg*10 + (**str-'0');
+			(*str)++;
+		}
+
+		if ((*str)[0] == ',' && i_isdigit((*str)[1])) {
+			/* background color */
+			(*str)++;
+			bg = **str-'0';
 			(*str)++;
 			if (i_isdigit(**str)) {
-				fg = fg*10 + (**str-'0');
+				bg = bg*10 + (**str-'0');
 				(*str)++;
-			}
-		}
-		if (**str == ',') {
-			/* background color */
-			if (!i_isdigit((*str)[1]))
-				bg = -1;
-			else {
-				(*str)++;
-				bg = **str-'0';
-				(*str)++;
-				if (i_isdigit(**str)) {
-					bg = bg*10 + (**str-'0');
-					(*str)++;
-				}
 			}
 		}
 	}
@@ -1110,7 +1121,7 @@ int strip_real_length(const char *str, int len,
 		*last_color_len = -1;
 
 	while (*str != '\0') {
-		if (*str == 3) {
+		if (*str == 3) { /* mIRC color */
 			const char *mircstart = str;
 
 			if (last_color_pos != NULL)
@@ -1121,6 +1132,9 @@ int strip_real_length(const char *str, int len,
 				*last_color_len = (int) (str-mircstart);
 
 		} else if (*str == 4 && str[1] != '\0') {
+			/* We expect 4 to indicate an internal Irssi color code. However 4
+			 * also means hex color, an alternative to mIRC color codes. We
+			 * don't support those. */
 #ifdef TERM_TRUECOLOR
 			if (str[1] == FORMAT_COLOR_24 && str[2] != '\0') {
 				if (str[3] == '\0') str++;
@@ -1222,6 +1236,13 @@ void format_send_to_gui(TEXT_DEST_REC *dest, const char *text)
 	dup = str = g_strdup(text);
 
 	flags = 0; fgcolor = theme->default_color; bgcolor = -1;
+
+	if (*str == '\0') {
+		/* empty line, write line info only */
+		signal_emit_id(signal_gui_print_text, 6, dest->window, GINT_TO_POINTER(fgcolor),
+		               GINT_TO_POINTER(bgcolor), GINT_TO_POINTER(flags), str, dest);
+	}
+
 	while (*str != '\0') {
 		type = '\0';
 		for (ptr = str; *ptr != '\0'; ptr++) {

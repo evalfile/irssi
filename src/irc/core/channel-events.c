@@ -21,6 +21,7 @@
 #include "module.h"
 #include "signals.h"
 #include "misc.h"
+#include "channel-events.h"
 #include "channels-setup.h"
 #include "settings.h"
 #include "recode.h"
@@ -37,7 +38,7 @@ static void check_join_failure(IRC_SERVER_REC *server, const char *channel)
 		channel++; /* server didn't understand !channels */
 
 	chanrec = channel_find(SERVER(server), channel);
-	if (chanrec == NULL && channel[0] == '!') {
+	if (chanrec == NULL && channel[0] == '!' && strlen(channel) > 6) {
 		/* it probably replied with the full !channel name,
 		   find the channel with the short name.. */
 		chan2 = g_strdup_printf("!%s", channel+6);
@@ -138,7 +139,13 @@ static void channel_change_topic(IRC_SERVER_REC *server, const char *channel,
 	g_free_not_null(chanrec->topic_by);
 	chanrec->topic_by = g_strdup(setby);
 
-	chanrec->topic_time = settime;
+	if (chanrec->topic_by == NULL) {
+		/* ensure invariant topic_time > 0 <=> topic_by != NULL.
+		   this could be triggered by a topic command without sender */
+		chanrec->topic_time = 0;
+	} else {
+		chanrec->topic_time = settime;
+	}
 
 	signal_emit("channel topic changed", 1, chanrec);
 }

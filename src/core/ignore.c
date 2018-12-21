@@ -24,6 +24,7 @@
 #include "levels.h"
 #include "lib-config/iconfig.h"
 #include "settings.h"
+#include "iregex.h"
 
 #include "masks.h"
 #include "servers.h"
@@ -67,13 +68,8 @@ static int ignore_match_pattern(IGNORE_REC *rec, const char *text)
 		return FALSE;
 
 	if (rec->regexp) {
-#ifdef USE_GREGEX
 		return rec->preg != NULL &&
-			g_regex_match(rec->preg, text, 0, NULL);
-#else
-		return rec->regexp_compiled &&
-			regexec(&rec->preg, text, 0, NULL, 0) == 0;
-#endif
+			i_regex_match(rec->preg, text, 0, NULL);
 	}
 
 	return rec->fullword ?
@@ -85,11 +81,24 @@ static int ignore_match_pattern(IGNORE_REC *rec, const char *text)
  * used as a flag to indicate it should only look at ignore items with NO_ACT.
  * However we also want to allow NO_ACT combined with levels, so mask it out and
  * match levels if set. */
-#define ignore_match_level(rec, level) \
-        (((level & MSGLEVEL_NO_ACT) != 0) ? \
-         ((~MSGLEVEL_NO_ACT & level) & (rec)->level) != 0 : \
-         ((rec)->level & MSGLEVEL_NO_ACT ? 0 : \
-         (level & (rec)->level) != 0))
+#define FLAG_MSGLEVELS ( MSGLEVEL_NO_ACT | MSGLEVEL_HIDDEN )
+static int ignore_match_level(IGNORE_REC *rec, int level, int flags)
+{
+	level &= ~FLAG_MSGLEVELS;
+	flags &= FLAG_MSGLEVELS;
+
+	if (!flags) {
+		/* case: we are not checking special flags. then, the
+		   record must not have any flags either, but it must
+		   have some of the levels */
+		return !(FLAG_MSGLEVELS & rec->level) && (level & rec->level);
+	} else {
+		 /* case: we want to test if some special flags
+		    apply. then, the record must have some of the
+		    flags and some of the levels */
+		return (flags & rec->level) && (level & rec->level);
+	}
+}
 
 #define ignore_match_nickmask(rec, nick, nickmask) \
 	((rec)->mask == NULL || \
@@ -105,7 +114,7 @@ static int ignore_match_pattern(IGNORE_REC *rec, const char *text)
 	((rec)->channels == NULL || ((channel) != NULL && \
 		strarray_find((rec)->channels, (channel)) != -1))
 
-static int ignore_check_replies(CHANNEL_REC *chanrec, const char *text, int level)
+static int ignore_check_replies(CHANNEL_REC *chanrec, const char *text, int level, int flags)
 {
 	GSList *tmp;
 
@@ -117,7 +126,7 @@ static int ignore_check_replies(CHANNEL_REC *chanrec, const char *text, int leve
 		IGNORE_REC *rec = tmp->data;
 
 		if (rec->mask != NULL && rec->replies &&
-		    ignore_match_level(rec, level) &&
+		    ignore_match_level(rec, level, flags) &&
 		    ignore_match_channel(rec, chanrec->name) &&
 		    ignore_check_replies_rec(rec, chanrec, text))
 			return TRUE;
@@ -126,8 +135,8 @@ static int ignore_check_replies(CHANNEL_REC *chanrec, const char *text, int leve
 	return FALSE;
 }
 
-int ignore_check(SERVER_REC *server, const char *nick, const char *host,
-		 const char *channel, const char *text, int level)
+int ignore_check_flags(SERVER_REC *server, const char *nick, const char *host,
+		       const char *channel, const char *text, int level, int flags)
 {
 	CHANNEL_REC *chanrec;
 	NICK_REC *nickrec;
@@ -163,7 +172,7 @@ int ignore_check(SERVER_REC *server, const char *nick, const char *host,
 				ignore_match_channel(rec, channel) &&
 				ignore_match_nickmask(rec, nick, nickmask);
 		if (match &&
-		    ignore_match_level(rec, level) &&
+		    ignore_match_level(rec, level, flags) &&
 		    ignore_match_pattern(rec, text)) {
 			len = rec->mask == NULL ? 0 : strlen(rec->mask);
 			if (len > best_mask) {
@@ -184,7 +193,28 @@ int ignore_check(SERVER_REC *server, const char *nick, const char *host,
 	if (best_match || (level & MSGLEVEL_PUBLIC) == 0)
 		return best_match;
 
-        return ignore_check_replies(chanrec, text, level);
+        return ignore_check_replies(chanrec, text, level, flags);
+}
+
+int ignore_check(SERVER_REC *server, const char *nick, const char *host,
+		 const char *channel, const char *text, int level) {
+	return ignore_check_flags(server, nick, host, channel, text, level, 0);
+}
+
+int ignore_check_plus(SERVER_REC *server, const char *nick, const char *address,
+		      const char *target, const char *msg, int *level, int test_ignore) {
+	int olevel = *level;
+
+	if (test_ignore && ignore_check(server, nick, address, target, msg, olevel))
+		return TRUE;
+
+	if (ignore_check_flags(server, nick, address, target, msg, olevel, MSGLEVEL_NO_ACT))
+		*level |= MSGLEVEL_NO_ACT;
+
+	if (ignore_check_flags(server, nick, address, target, msg, olevel, MSGLEVEL_HIDDEN))
+		*level |= MSGLEVEL_HIDDEN;
+
+	return FALSE;
 }
 
 IGNORE_REC *ignore_find_full(const char *servertag, const char *mask, const char *pattern,
@@ -214,6 +244,12 @@ IGNORE_REC *ignore_find_full(const char *servertag, const char *mask, const char
 			continue;
 
 		if (!(flags & IGNORE_FIND_NOACT) && (rec->level & MSGLEVEL_NO_ACT) != 0)
+			continue;
+
+		if ((flags & IGNORE_FIND_HIDDEN) && (rec->level & MSGLEVEL_HIDDEN) == 0)
+			continue;
+
+		if (!(flags & IGNORE_FIND_HIDDEN) && (rec->level & MSGLEVEL_HIDDEN) != 0)
 			continue;
 
 		if ((rec->mask == NULL && mask != NULL) ||
@@ -266,6 +302,11 @@ IGNORE_REC *ignore_find(const char *servertag, const char *mask, char **channels
 IGNORE_REC *ignore_find_noact(const char *servertag, const char *mask, char **channels, int noact)
 {
 	return ignore_find_full(servertag, mask, NULL, channels, IGNORE_FIND_NOACT);
+}
+
+IGNORE_REC *ignore_find_hidden(const char *servertag, const char *mask, char **channels, int hidden)
+{
+	return ignore_find_full(servertag, mask, NULL, channels, IGNORE_FIND_HIDDEN);
 }
 
 static void ignore_set_config(IGNORE_REC *rec)
@@ -327,41 +368,19 @@ static void ignore_remove_config(IGNORE_REC *rec)
 
 static void ignore_init_rec(IGNORE_REC *rec)
 {
-#ifdef USE_GREGEX
 	if (rec->preg != NULL)
-		g_regex_unref(rec->preg);
+		i_regex_unref(rec->preg);
 
 	if (rec->regexp && rec->pattern != NULL) {
 		GError *re_error = NULL;
 
-		rec->preg = g_regex_new(rec->pattern, G_REGEX_OPTIMIZE | G_REGEX_RAW | G_REGEX_CASELESS, 0, &re_error);
+		rec->preg = i_regex_new(rec->pattern, G_REGEX_OPTIMIZE | G_REGEX_CASELESS, 0, &re_error);
 
 		if (rec->preg == NULL) {
 			g_warning("Failed to compile regexp '%s': %s", rec->pattern, re_error->message);
 			g_error_free(re_error);
 		}
 	}
-#else
-	char *errbuf;
-	int errcode, errbuf_len;
-
-	if (rec->regexp_compiled) regfree(&rec->preg);
-	rec->regexp_compiled = FALSE;
-
-	if (rec->regexp && rec->pattern != NULL) {
-		errcode = regcomp(&rec->preg, rec->pattern,
-				REG_EXTENDED|REG_ICASE|REG_NOSUB);
-		if (errcode != 0) {
-			errbuf_len = regerror(errcode, &rec->preg, 0, 0);
-			errbuf = g_malloc(errbuf_len);
-			regerror(errcode, &rec->preg, errbuf, errbuf_len);
-			g_warning("Failed to compile regexp '%s': %s", rec->pattern, errbuf);
-			g_free(errbuf);
-		} else {
-			rec->regexp_compiled = TRUE;
-		}
-	}
-#endif
 }
 
 void ignore_add_rec(IGNORE_REC *rec)
@@ -381,11 +400,7 @@ static void ignore_destroy(IGNORE_REC *rec, int send_signal)
 	if (send_signal)
 		signal_emit("ignore destroyed", 1, rec);
 
-#ifdef USE_GREGEX
-	if (rec->preg != NULL) g_regex_unref(rec->preg);
-#else
-	if (rec->regexp_compiled) regfree(&rec->preg);
-#endif
+	if (rec->preg != NULL) i_regex_unref(rec->preg);
 	if (rec->channels != NULL) g_strfreev(rec->channels);
 	g_free_not_null(rec->mask);
 	g_free_not_null(rec->servertag);

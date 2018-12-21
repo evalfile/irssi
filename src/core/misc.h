@@ -21,7 +21,8 @@ GSList *gslist_find_string(GSList *list, const char *key);
 GSList *gslist_find_icase_string(GSList *list, const char *key);
 GList *glist_find_string(GList *list, const char *key);
 GList *glist_find_icase_string(GList *list, const char *key);
-GSList *gslist_remove_string (GSList *list, const char *str);
+GSList *gslist_remove_string (GSList *list, const char *str) G_GNUC_DEPRECATED;
+GSList *gslist_delete_string (GSList *list, const char *str, GDestroyNotify free_func);
 
 void gslist_free_full (GSList *list, GDestroyNotify free_func);
 
@@ -71,6 +72,7 @@ int expand_escape(const char **data);
 int nearest_power(int num);
 
 /* Returns TRUE / FALSE */
+int parse_uint(const char *nptr, char **endptr, int base, guint *number);
 int parse_time_interval(const char *time, int *msecs);
 int parse_size(const char *size, int *bytes);
 

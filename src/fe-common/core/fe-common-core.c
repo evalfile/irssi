@@ -32,6 +32,9 @@
 #include "special-vars.h"
 #include "fe-core-commands.h"
 #include "fe-queries.h"
+#ifdef HAVE_CAPSICUM
+#include "fe-capsicum.h"
+#endif
 #include "hilight-text.h"
 #include "command-history.h"
 #include "completion.h"
@@ -101,7 +104,7 @@ static void sig_connected(SERVER_REC *server)
 	MODULE_DATA_SET(server, g_new0(MODULE_SERVER_REC, 1));
 }
 
-static void sig_disconnected(SERVER_REC *server)
+static void sig_destroyed(SERVER_REC *server)
 {
 	void *data = MODULE_DATA(server);
 	g_free(data);
@@ -179,6 +182,9 @@ void fe_common_core_init(void)
 	fe_server_init();
 	fe_settings_init();
 	fe_tls_init();
+#ifdef HAVE_CAPSICUM
+	fe_capsicum_init();
+#endif
 	windows_init();
 	window_activity_init();
 	window_commands_init();
@@ -197,7 +203,7 @@ void fe_common_core_init(void)
 	settings_check();
 
         signal_add_first("server connected", (SIGNAL_FUNC) sig_connected);
-        signal_add_last("server disconnected", (SIGNAL_FUNC) sig_disconnected);
+        signal_add_last("server destroyed", (SIGNAL_FUNC) sig_destroyed);
         signal_add_first("channel created", (SIGNAL_FUNC) sig_channel_created);
         signal_add_last("channel destroyed", (SIGNAL_FUNC) sig_channel_destroyed);
 
@@ -221,6 +227,9 @@ void fe_common_core_deinit(void)
 	fe_server_deinit();
 	fe_settings_deinit();
 	fe_tls_deinit();
+#ifdef HAVE_CAPSICUM
+	fe_capsicum_deinit();
+#endif
 	windows_deinit();
 	window_activity_deinit();
 	window_commands_deinit();
@@ -240,7 +249,7 @@ void fe_common_core_deinit(void)
 
         signal_remove("setup changed", (SIGNAL_FUNC) sig_setup_changed);
         signal_remove("server connected", (SIGNAL_FUNC) sig_connected);
-        signal_remove("server disconnected", (SIGNAL_FUNC) sig_disconnected);
+        signal_remove("server destroyed", (SIGNAL_FUNC) sig_destroyed);
         signal_remove("channel created", (SIGNAL_FUNC) sig_channel_created);
         signal_remove("channel destroyed", (SIGNAL_FUNC) sig_channel_destroyed);
 }
@@ -461,26 +470,51 @@ void fe_common_core_finish_init(void)
 
 gboolean strarray_find_dest(char **array, const TEXT_DEST_REC *dest)
 {
+	WI_ITEM_REC *item;
+	int server_tag_len, channel_type, query_type;
+	char **tmp;
+
+	channel_type = module_get_uniq_id_str("WINDOW ITEM TYPE", "CHANNEL");
+	query_type = module_get_uniq_id_str("WINDOW ITEM TYPE", "QUERY");
+
 	g_return_val_if_fail(array != NULL, FALSE);
+	g_return_val_if_fail(dest != NULL, FALSE);
+	g_return_val_if_fail(dest->window != NULL, FALSE);
 
-	if (strarray_find(array, "*") != -1)
-		return TRUE;
+	if (dest->target == NULL)
+		return strarray_find(array, dest->window->name) != -1 ? TRUE : FALSE;
 
-	if (strarray_find(array, dest->target) != -1)
-		return TRUE;
-
-	if (dest->server_tag != NULL) {
-		char *tagtarget = g_strdup_printf("%s/%s", dest->server_tag, "*");
-		int ret = strarray_find(array, tagtarget);
-		g_free(tagtarget);
-		if (ret != -1)
-			return TRUE;
-
-		tagtarget = g_strdup_printf("%s/%s", dest->server_tag, dest->target);
-		ret = strarray_find(array, tagtarget);
-		g_free(tagtarget);
-		if (ret != -1)
-			return TRUE;
+	item = window_item_find_window(dest->window, dest->server, dest->target);
+	if (item == NULL) {
+		return FALSE;
 	}
+
+	server_tag_len = dest->server_tag != NULL ? strlen(dest->server_tag) : 0;
+	for (tmp = array; *tmp != NULL; tmp++) {
+		char *str = *tmp;
+		if (*str == '\0') {
+			continue;
+		}
+
+		if (server_tag_len &&
+		    g_ascii_strncasecmp(str, dest->server_tag, server_tag_len) == 0 &&
+		    str[server_tag_len] == '/') {
+			str += server_tag_len + 1;
+		}
+
+		if (g_strcmp0(str, "") == 0 || g_strcmp0(str, "::all") == 0) {
+			return TRUE;
+		} else if (g_ascii_strcasecmp(str, dest->target) == 0) {
+			return TRUE;
+		} else if (item->type == query_type &&
+		           g_strcmp0(str, dest->target[0] == '=' ? "::dccqueries" :
+			             "::queries") == 0) {
+			return TRUE;
+		} else if (item->type == channel_type &&
+			   g_strcmp0(str, "::channels") == 0) {
+			return TRUE;
+		}
+	}
+
 	return FALSE;
 }

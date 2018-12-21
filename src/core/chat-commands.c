@@ -149,9 +149,9 @@ static SERVER_CONNECT_REC *get_server_connect(const char *data, int *plus_addr,
         return conn;
 }
 
-/* SYNTAX: CONNECT [-4 | -6] [-ssl] [-ssl_cert <cert>] [-ssl_pkey <pkey>] [-ssl_pass <password>]
-                   [-ssl_verify] [-ssl_cafile <cafile>] [-ssl_capath <capath>]
-                   [-ssl_ciphers <list>]
+/* SYNTAX: CONNECT [-4 | -6] [-tls] [-tls_cert <cert>] [-tls_pkey <pkey>] [-tls_pass <password>]
+                   [-tls_verify] [-tls_cafile <cafile>] [-tls_capath <capath>]
+                   [-tls_ciphers <list>] [-tls_pinned_cert <fingerprint>] [-tls_pinned_pubkey <fingerprint>]
                    [-!] [-noautosendcmd]
 		   [-noproxy] [-network <network>] [-host <hostname>]
 		   [-rawlog <file>]
@@ -250,10 +250,10 @@ static void cmd_server(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
 	command_runsub("server", data, server, item);
 }
 
-/* SYNTAX: SERVER CONNECT [-4 | -6] [-ssl] [-ssl_cert <cert>] [-ssl_pkey <pkey>] 
-		  [-ssl_pass <password>] [-ssl_verify] [-ssl_cafile <cafile>] 
-		  [-ssl_capath <capath>]
-		  [-ssl_ciphers <list>]
+/* SYNTAX: SERVER CONNECT [-4 | -6] [-tls] [-tls_cert <cert>] [-tls_pkey <pkey>] 
+		  [-tls_pass <password>] [-tls_verify] [-tls_cafile <cafile>] 
+		  [-tls_capath <capath>]
+		  [-tls_ciphers <list>] [-tls_pinned_cert <fingerprint>] [-tls_pinned_pubkey <fingerprint>]
 		  [-!] [-noautosendcmd]
 		  [-noproxy] [-network <network>] [-host <hostname>]
 		  [-rawlog <file>]
@@ -438,41 +438,66 @@ static void cmd_foreach(const char *data, SERVER_REC *server,
 /* SYNTAX: FOREACH SERVER <command> */
 static void cmd_foreach_server(const char *data, SERVER_REC *server)
 {
-        GSList *list;
+	GSList *list;
+	const char *cmdchars;
+	char *str;
+
+	cmdchars = settings_get_str("cmdchars");
+	str = strchr(cmdchars, *data) != NULL ? g_strdup(data) :
+		g_strdup_printf("%c%s", *cmdchars, data);
 
 	list = g_slist_copy(servers);
 	while (list != NULL) {
-		signal_emit("send command", 3, data, list->data, NULL);
-                list = g_slist_remove(list, list->data);
+		signal_emit("send command", 3, str, list->data, NULL);
+		list = g_slist_remove(list, list->data);
 	}
+
+	g_free(str);
 }
 
 /* SYNTAX: FOREACH CHANNEL <command> */
 static void cmd_foreach_channel(const char *data)
 {
-        GSList *list;
+	GSList *list;
+	const char *cmdchars;
+	char *str;
+
+	cmdchars = settings_get_str("cmdchars");
+	str = strchr(cmdchars, *data) != NULL ? g_strdup(data) :
+		g_strdup_printf("%c%s", *cmdchars, data);
 
 	list = g_slist_copy(channels);
 	while (list != NULL) {
 		CHANNEL_REC *rec = list->data;
 
-		signal_emit("send command", 3, data, rec->server, rec);
-                list = g_slist_remove(list, list->data);
+		signal_emit("send command", 3, str, rec->server, rec);
+		list = g_slist_remove(list, list->data);
 	}
+
+	g_free(str);
 }
 
 /* SYNTAX: FOREACH QUERY <command> */
 static void cmd_foreach_query(const char *data)
 {
-        GSList *list;
+	GSList *list;
+	const char *cmdchars;
+	char *str;
+
+	cmdchars = settings_get_str("cmdchars");
+	str = strchr(cmdchars, *data) != NULL ? g_strdup(data) :
+		g_strdup_printf("%c%s", *cmdchars, data);
+
 
 	list = g_slist_copy(queries);
 	while (list != NULL) {
 		QUERY_REC *rec = list->data;
 
-		signal_emit("send command", 3, data, rec->server, rec);
-                list = g_slist_remove(list, list->data);
+		signal_emit("send command", 3, str, rec->server, rec);
+		list = g_slist_remove(list, list->data);
 	}
+
+	g_free(str);
 }
 
 void chat_commands_init(void)

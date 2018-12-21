@@ -1,12 +1,13 @@
 use strict;
 use Irssi 20040119.2359 ();
 use vars qw($VERSION %IRSSI);
-$VERSION = "1.19";
+$VERSION = "1.20";
 %IRSSI = (
     authors     => 'David Leadbeater, Timo Sirainen, Georg Lukas',
     contact     => 'dgl@dgl.cx, tss@iki.fi, georg@boerde.de',
     name        => 'usercount',
     description => 'Adds a usercount for a channel as a statusbar item',
+    sbitems     => 'usercount',
     license     => 'GNU GPLv2 or later',
     url         => 'http://irssi.dgl.cx/',
     changes     => 'Only show halfops if server supports them',
@@ -127,7 +128,7 @@ sub calc_users() {
   }
 
   # Server doesn't support halfops? 
-  if($server->isupport("PREFIX") !~ /\%/) {
+  if($server->can('isupport') && $server->isupport("PREFIX") !~ /\%/) {
      $halfops = undef;
   } else {
      $halfops = undef unless Irssi::settings_get_bool('usercount_show_halfops');

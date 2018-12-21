@@ -173,6 +173,7 @@ static void sig_message_public(SERVER_REC *server, const char *msg,
 {
 	CHANNEL_REC *channel;
         int own;
+	g_return_if_fail(nick != NULL);
 
 	channel = channel_find(server, target);
 	if (channel != NULL) {
@@ -185,6 +186,7 @@ static void sig_message_join(SERVER_REC *server, const char *channel,
 			     const char *nick, const char *address)
 {
 	CHANNEL_REC *chanrec;
+	g_return_if_fail(nick != NULL);
 
 	chanrec = channel_find(server, channel);
 	if (chanrec != NULL)
@@ -639,6 +641,59 @@ static void complete_window_nicks(GList **list, WINDOW_REC *window,
         }
 }
 
+/* Checks if a line is only nicks from autocompletion.
+   This lets us insert colons only at the beginning of a list
+   of nicks */
+static int only_nicks(const char *linestart)
+{
+	int i = 1;
+	char prev;
+
+	// at the beginning of the line
+	if (*linestart == '\0') {
+		return TRUE;
+	}
+
+	/* completion_char being a whole string introduces loads of edge cases
+	   and can't be handled generally. Skip this case; we handled the
+	   "beginning of line" case already */
+	if (completion_char[1] != '\0')
+		return FALSE;
+
+	/* This would make the completion char get inserted everywhere otherwise */
+	if (*completion_char == ' ')
+		return FALSE;
+
+	/* First ensure that the line is of the format "foo: bar: baz"
+	   we check this by ensuring each space is preceded by a colon or
+	   another space */
+	while (linestart[i] != '\0') {
+		if (linestart[i] == ' ') {
+			prev = linestart[i - 1];
+			if (prev != *completion_char && prev != ' ')
+				return FALSE;
+		}
+		i += 1;
+	}
+
+	/* There's an edge case here, if we're completing something
+	   like `foo: bar ba<tab>`, then the `linestart` line will end
+	   at "bar", and we'll miss the space. Ensure that the end
+	   of the line is a colon followed by an optional series of spaces */
+	i -= 1;
+	while (i >= 0) {
+		if (linestart[i] == ' ') {
+			i--;
+			continue;
+		} else if (linestart[i] == *completion_char) {
+			return TRUE;
+		} else {
+			break;
+		}
+	}
+	return FALSE;
+}
+
 static void sig_complete_word(GList **list, WINDOW_REC *window,
 			      const char *word, const char *linestart,
 			      int *want_space)
@@ -691,7 +746,7 @@ static void sig_complete_word(GList **list, WINDOW_REC *window,
 	} else if (channel != NULL) {
 		/* nick completion .. we could also be completing a nick
 		   after /MSG from nicks in channel */
-		const char *suffix = *linestart != '\0' ? NULL : completion_char;
+		const char *suffix = only_nicks(linestart) ? completion_char : NULL;
 		complete_window_nicks(list, window, word, suffix);
 	} else if (window->level & MSGLEVEL_MSGS) {
 		/* msgs window, complete /MSG nicks */
@@ -1011,13 +1066,17 @@ static void sig_complete_target(GList **list, WINDOW_REC *window,
 	}
 }
 
+static void event_text(const char *data, SERVER_REC *server, WI_ITEM_REC *item);
+
 /* expand \n, \t and \\ */
 static char *expand_escapes(const char *line, SERVER_REC *server,
 			    WI_ITEM_REC *item)
 {
 	char *ptr, *ret;
-        int chr;
+	const char *prev;
+	int chr;
 
+	prev = line;
 	ret = ptr = g_malloc(strlen(line)+1);
 	for (; *line != '\0'; line++) {
 		if (*line != '\\') {
@@ -1036,9 +1095,11 @@ static char *expand_escapes(const char *line, SERVER_REC *server,
 			/* newline .. we need to send another "send text"
 			   event to handle it (or actually the text before
 			   the newline..) */
-			if (ret != ptr) {
-				*ptr = '\0';
-				signal_emit("send text", 3, ret, server, item);
+			if (prev != line) {
+				char *prev_line = g_strndup(prev, (line - prev) - 1);
+				event_text(prev_line, server, item);
+				g_free(prev_line);
+				prev = line + 1;
 				ptr = ret;
 			}
 		} else if (chr != -1) {

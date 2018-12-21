@@ -305,7 +305,7 @@ void command_runsub(const char *cmd, const char *data,
 
 	if (*data == '\0') {
                 /* no subcommand given - list the subcommands */
-		signal_emit("list subcommands", 2, cmd);
+		signal_emit("list subcommands", 1, cmd);
 		return;
 	}
 
@@ -567,13 +567,14 @@ static int get_cmd_options(char **data, int ignore_unknown,
 
 	option = NULL; pos = -1;
 	for (;;) {
-		if (**data == '-') {
+		if (**data == '\0' || **data == '-') {
 			if (option != NULL && *optlist[pos] == '+') {
 				/* required argument missing! */
                                 *data = optlist[pos] + 1;
 				return CMDERR_OPTION_ARG_MISSING;
 			}
-
+		}
+		if (**data == '-') {
 			(*data)++;
 			if (**data == '-' && (*data)[1] == ' ') {
 				/* -- option means end of options even
@@ -890,7 +891,7 @@ static void parse_command(const char *command, int expand_aliases,
 	if (rec != NULL && !cmd_protocol_match(rec, server)) {
 		g_free(orig);
 
-		signal_emit("error command", 2,
+		signal_emit("error command", 1,
 			    GINT_TO_POINTER(server == NULL ?
 					    CMDERR_NOT_CONNECTED :
 					    CMDERR_ILLEGAL_PROTO));

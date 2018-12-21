@@ -148,6 +148,8 @@ static void print_server_splits(IRC_SERVER_REC *server, TEMP_SPLIT_REC *rec, con
 	char *sourceserver;
 	GSList *tmp;
 
+	g_return_if_fail(rec->servers != NULL);
+
 	destservers = g_string_new(NULL);
 	for (tmp = rec->servers; tmp != NULL; tmp = tmp->next) {
 		NETSPLIT_SERVER_REC *rec = tmp->data;
@@ -197,7 +199,7 @@ static void temp_split_chan_free(TEMP_SPLIT_CHAN_REC *rec)
 	g_free(rec);
 }
 
-static void print_splits(IRC_SERVER_REC *server, const char *channel)
+static void print_splits(IRC_SERVER_REC *server, const char *filter_channel)
 {
 	TEMP_SPLIT_REC temp;
 	GSList *servers;
@@ -216,7 +218,7 @@ static void print_splits(IRC_SERVER_REC *server, const char *channel)
 
 		g_hash_table_foreach(server->splits,
 				     (GHFunc) get_server_splits, &temp);
-		print_server_splits(server, &temp, channel);
+		print_server_splits(server, &temp, filter_channel);
 
 		g_slist_foreach(temp.channels,
 				(GFunc) temp_split_chan_free, NULL);
@@ -253,15 +255,16 @@ static void sig_print_starting(TEXT_DEST_REC *dest)
 	if (!IS_IRC_SERVER(dest->server))
 		return;
 
-	if (!(dest->level & MSGLEVEL_PUBLIC))
-		return;
-
-	if (!server_ischannel(dest->server, dest->target))
-		return;
-
 	rec = IRC_SERVER(dest->server);
-	if (rec->split_servers != NULL)
-		print_splits(rec, dest->target);
+	if (rec->split_servers != NULL) {
+		/* if split_servers exists, the server rec should be
+		   still valid. otherwise, calling server->ischannel
+		   may not be safe. */
+		if (dest->target != NULL && !server_ischannel((SERVER_REC *) rec, dest->target))
+			return;
+
+		print_splits(rec, NULL);
+	}
 }
 
 static int sig_check_splits(void)

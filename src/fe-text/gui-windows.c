@@ -23,6 +23,7 @@
 #include "misc.h"
 #include "settings.h"
 #include "special-vars.h"
+#include "levels.h"
 
 #include "term.h"
 #include "gui-entry.h"
@@ -30,6 +31,7 @@
 #include "gui-printtext.h"
 
 static int window_create_override;
+static int wcwidth_impl;
 
 static GUI_WINDOW_REC *gui_window_init(WINDOW_REC *window,
 				       MAIN_WINDOW_REC *parent)
@@ -50,6 +52,8 @@ static GUI_WINDOW_REC *gui_window_init(WINDOW_REC *window,
 					   !settings_get_bool("indent_always"),
 					   get_default_indent_func());
 	textbuffer_view_set_break_wide(gui->view, settings_get_bool("break_wide"));
+	wcwidth_impl = settings_get_choice("wcwidth_implementation");
+	textbuffer_view_set_hidden_level(gui->view, settings_get_level("window_default_hidelevel"));
 	if (parent->active == window)
 		textbuffer_view_set_window(gui->view, parent->screen_win);
 	return gui;
@@ -73,17 +77,18 @@ static void gui_window_created(WINDOW_REC *window, void *automatic)
 
 	g_return_if_fail(window != NULL);
 
-	new_parent = window_create_override == 0 ||
-		window_create_override == 2 ||
+	new_parent = window_create_override == MAIN_WINDOW_TYPE_DEFAULT ||
+		window_create_override == MAIN_WINDOW_TYPE_SPLIT ||
+		window_create_override == MAIN_WINDOW_TYPE_RSPLIT ||
 		active_win == NULL || WINDOW_GUI(active_win) == NULL;
-	parent = !new_parent ? WINDOW_MAIN(active_win) : mainwindow_create();
+	parent = !new_parent ? WINDOW_MAIN(active_win) : mainwindow_create(window_create_override == MAIN_WINDOW_TYPE_RSPLIT);
 	if (parent == NULL) {
 		/* not enough space for new window, but we really can't
 		   abort creation of the window anymore, so create hidden
 		   window instead. */
 		parent = WINDOW_MAIN(active_win);
 	}
-	window_create_override = -1;
+	window_create_override = MAIN_WINDOW_TYPE_NONE;
 
 	if (parent->active == NULL) parent->active = window;
 	window->gui_data = gui_window_init(window, parent);
@@ -199,10 +204,17 @@ void gui_window_reparent(WINDOW_REC *window, MAIN_WINDOW_REC *parent)
 void gui_windows_reset_settings(void)
 {
 	GSList *tmp;
+	int old_wcwidth_impl = wcwidth_impl;
+
+	wcwidth_impl = settings_get_choice("wcwidth_implementation");
 
 	for (tmp = windows; tmp != NULL; tmp = tmp->next) {
 		WINDOW_REC *rec = tmp->data;
 		GUI_WINDOW_REC *gui = WINDOW_GUI(rec);
+
+		if (old_wcwidth_impl != wcwidth_impl) {
+			textbuffer_view_reset_cache(gui->view);
+		}
 
 		textbuffer_view_set_break_wide(gui->view, settings_get_bool("break_wide"));
 
@@ -214,6 +226,10 @@ void gui_windows_reset_settings(void)
 		textbuffer_view_set_scroll(gui->view,
 					   gui->use_scroll ? gui->scroll :
 					   settings_get_bool("scroll"));
+
+		if (old_wcwidth_impl != wcwidth_impl) {
+			textbuffer_view_redraw(gui->view);
+		}
 	}
 }
 
@@ -281,13 +297,15 @@ static void read_settings(void)
 
 void gui_windows_init(void)
 {
-        settings_add_bool("lookandfeel", "autostick_split_windows", TRUE);
+	settings_add_bool("lookandfeel", "autostick_split_windows", FALSE);
+	settings_add_bool("lookandfeel", "autounstick_windows", TRUE);
 	settings_add_int("lookandfeel", "indent", 10);
 	settings_add_bool("lookandfeel", "indent_always", FALSE);
 	settings_add_bool("lookandfeel", "break_wide", FALSE);
 	settings_add_bool("lookandfeel", "scroll", TRUE);
+	settings_add_level("lookandfeel", "window_default_hidelevel", "HIDDEN");
 
-	window_create_override = -1;
+	window_create_override = MAIN_WINDOW_TYPE_NONE;
 
 	read_settings();
 	signal_add("gui window create override", (SIGNAL_FUNC) sig_window_create_override);

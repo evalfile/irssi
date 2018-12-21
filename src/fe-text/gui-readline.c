@@ -160,6 +160,7 @@ static void window_next_page(void)
 	gui_window_scroll(active_win, get_scroll_count());
 }
 
+#define isnewline(x) ((x) == '\n' || (x) == '\r')
 static void paste_buffer_join_lines(GArray *buf)
 {
 	unsigned int i, count, indent, line_len;
@@ -199,7 +200,7 @@ static void paste_buffer_join_lines(GArray *buf)
 
 	/* find the first beginning of indented line */
 	for (i = 1; i < buf->len; i++) {
-		if (arr[i-1] == '\n' && isblank(arr[i]))
+		if (isnewline(arr[i-1]) && isblank(arr[i]))
 			break;
 	}
 	if (i == buf->len)
@@ -226,7 +227,7 @@ static void paste_buffer_join_lines(GArray *buf)
 				count = 0;
 			}
 		}
-		if (arr[i] == '\n')
+		if (isnewline(arr[i]))
 			last_lf = TRUE;
 	}
 
@@ -236,11 +237,12 @@ static void paste_buffer_join_lines(GArray *buf)
 	for (i = 0; i < buf->len; i++) {
 		if (last_lf && isblank(arr[i])) {
 			/* whitespace, ignore */
-		} else if (arr[i] == '\n') {
+		} else if (isnewline(arr[i])) {
 			if (!last_lf && i+1 != buf->len &&
 			    isblank(arr[i+1])) {
 				last_lf_pos = dest;
-				*dest++ = ' ';
+				if (i != 0 && !isblank(arr[i-1]))
+					*dest++ = ' ';
 			} else {
 				*dest++ = '\n'; /* double-LF */
 				line_len = 0;
@@ -287,7 +289,7 @@ static void paste_send(void)
 		/* first line has to be kludged kind of to get pasting in the
 		   middle of line right.. */
 		for (i = 0; i < paste_buffer->len; i++) {
-			if (arr[i] == '\r' || arr[i] == '\n') {
+			if (isnewline(arr[i])) {
 				i++;
 				break;
 			}
@@ -303,7 +305,7 @@ static void paste_send(void)
 	/* rest of the lines */
 	str = g_string_new(NULL);
 	for (; i < paste_buffer->len; i++) {
-		if (arr[i] == '\r' || arr[i] == '\n') {
+		if (isnewline(arr[i])) {
 			paste_send_line(str->str);
 			g_string_truncate(str, 0);
 		} else if (active_entry->utf8) {
@@ -530,6 +532,39 @@ static void key_forward_history(void)
         g_free(line);
 }
 
+static void key_backward_global_history(void)
+{
+	const char *text;
+	char *line;
+
+	line = gui_entry_get_text(active_entry);
+	text = command_global_history_prev(active_win, line);
+	gui_entry_set_text(active_entry, text);
+	g_free(line);
+}
+
+static void key_forward_global_history(void)
+{
+	const char *text;
+	char *line;
+
+	line = gui_entry_get_text(active_entry);
+	text = command_global_history_next(active_win, line);
+	gui_entry_set_text(active_entry, text);
+	g_free(line);
+}
+
+static void key_erase_history_entry(void)
+{
+	const char *text;
+	char *line;
+
+	line = gui_entry_get_text(active_entry);
+	text = command_history_delete_current(active_win, line);
+	gui_entry_set_text(active_entry, text);
+	g_free(line);
+}
+
 static void key_beginning_of_line(void)
 {
         gui_entry_set_pos(active_entry, 0);
@@ -736,7 +771,7 @@ static void paste_bracketed_end(int i, gboolean rest)
 
 	last_char = g_array_index(paste_buffer, unichar, i - 1);
 
-	if (paste_line_count > 0 && last_char != '\n' && last_char != '\r') {
+	if (paste_line_count > 0 && !isnewline(last_char)) {
 		/* there are newlines, but there's also stuff after the newline
 		 * adjust line count to reflect this */
 		paste_line_count++;
@@ -878,8 +913,7 @@ static void key_completion(int erase, int backward)
 	g_free(text);
 
 	if (line != NULL) {
-		gui_entry_set_text(active_entry, line);
-		gui_entry_set_pos(active_entry, pos);
+		gui_entry_set_text_and_pos_bytes(active_entry, line, pos);
 		g_free(line);
 	}
 }
@@ -909,8 +943,7 @@ static void key_check_replaces(void)
 	g_free(text);
 
 	if (line != NULL) {
-		gui_entry_set_text(active_entry, line);
-		gui_entry_set_pos(active_entry, pos);
+		gui_entry_set_text_and_pos_bytes(active_entry, line, pos);
 		g_free(line);
 	}
 }
@@ -1143,6 +1176,7 @@ void gui_readline_init(void)
 	key_bind("key", NULL, "^H", "backspace", (SIGNAL_FUNC) key_combo);
 	key_bind("key", NULL, "^?", "backspace", (SIGNAL_FUNC) key_combo);
 	key_bind("key", NULL, "^I", "tab", (SIGNAL_FUNC) key_combo);
+	key_bind("key", NULL, "meta2-Z", "stab", (SIGNAL_FUNC) key_combo);
 
         /* meta */
 	key_bind("key", NULL, "^[", "meta", (SIGNAL_FUNC) key_combo);
@@ -1178,6 +1212,8 @@ void gui_readline_init(void)
 	key_bind("key", NULL, "meta2-5C", "cright", (SIGNAL_FUNC) key_combo);
 	key_bind("key", NULL, "meta2-1;5D", "cleft", (SIGNAL_FUNC) key_combo);
 	key_bind("key", NULL, "meta2-1;5C", "cright", (SIGNAL_FUNC) key_combo);
+	key_bind("key", NULL, "meta2-1;5A", "cup", (SIGNAL_FUNC) key_combo);
+	key_bind("key", NULL, "meta2-1;5B", "cdown", (SIGNAL_FUNC) key_combo);
 
 	key_bind("key", NULL, "meta2-1;3A", "mup", (SIGNAL_FUNC) key_combo);
 	key_bind("key", NULL, "meta2-1;3B", "mdown", (SIGNAL_FUNC) key_combo);
@@ -1219,6 +1255,9 @@ void gui_readline_init(void)
         /* history */
 	key_bind("backward_history", "Go back one line in the history", "up", NULL, (SIGNAL_FUNC) key_backward_history);
 	key_bind("forward_history", "Go forward one line in the history", "down", NULL, (SIGNAL_FUNC) key_forward_history);
+	key_bind("backward_global_history", "Go back one line in the global history", "cup", NULL, (SIGNAL_FUNC) key_backward_global_history);
+	key_bind("forward_global_history", "Go forward one line in the global history", "cdown", NULL, (SIGNAL_FUNC) key_forward_global_history);
+	key_bind("erase_history_entry", "Erase the currently active entry from the history", NULL, NULL, (SIGNAL_FUNC) key_erase_history_entry);
 
         /* line editing */
 	key_bind("backspace", "Delete the previous character", "backspace", NULL, (SIGNAL_FUNC) key_backspace);
@@ -1242,7 +1281,7 @@ void gui_readline_init(void)
 
         /* line transmitting */
 	key_bind("send_line", "Execute the input line", "return", NULL, (SIGNAL_FUNC) key_send_line);
-	key_bind("word_completion_backward", "", NULL, NULL, (SIGNAL_FUNC) key_word_completion_backward);
+	key_bind("word_completion_backward", "Choose previous completion suggestion", "stab", NULL, (SIGNAL_FUNC) key_word_completion_backward);
 	key_bind("word_completion", "Complete the current word", "tab", NULL, (SIGNAL_FUNC) key_word_completion);
 	key_bind("erase_completion", "Remove the completion added by word_completion", "meta-k", NULL, (SIGNAL_FUNC) key_erase_completion);
 	key_bind("check_replaces", "Check word replaces", NULL, NULL, (SIGNAL_FUNC) key_check_replaces);
@@ -1312,6 +1351,9 @@ void gui_readline_deinit(void)
 
 	key_unbind("backward_history", (SIGNAL_FUNC) key_backward_history);
 	key_unbind("forward_history", (SIGNAL_FUNC) key_forward_history);
+	key_unbind("backward_global_history", (SIGNAL_FUNC) key_backward_global_history);
+	key_unbind("forward_global_history", (SIGNAL_FUNC) key_forward_global_history);
+	key_unbind("erase_history_entry", (SIGNAL_FUNC) key_erase_history_entry);
 
 	key_unbind("backspace", (SIGNAL_FUNC) key_backspace);
 	key_unbind("delete_character", (SIGNAL_FUNC) key_delete_character);

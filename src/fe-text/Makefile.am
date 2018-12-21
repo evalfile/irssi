@@ -9,7 +9,8 @@ AM_CPPFLAGS = \
 irssi_DEPENDENCIES = \
 	@COMMON_LIBS@ \
 	@PERL_LINK_LIBS@ \
-	@PERL_FE_LINK_LIBS@
+	@PERL_FE_LINK_LIBS@ \
+	@OTR_LINK_LIBS@
 
 irssi_LDFLAGS = -export-dynamic
 
@@ -17,6 +18,8 @@ irssi_LDADD = \
 	@COMMON_LIBS@ \
 	@PERL_LINK_LIBS@ \
 	@PERL_FE_LINK_LIBS@ \
+	@OTR_LINK_LIBS@ \
+	@OTR_LINK_FLAGS@ \
 	@PERL_LINK_FLAGS@ \
 	@PROG_LIBS@ \
 	@TEXTUI_LIBS@
@@ -50,20 +53,20 @@ irssi_SOURCES = \
 
 pkginc_fe_textdir=$(pkgincludedir)/src/fe-text
 pkginc_fe_text_HEADERS = \
-	statusbar-item.h
+	gui-printtext.h \
+	gui-windows.h \
+	mainwindows.h \
+	statusbar.h \
+	statusbar-item.h \
+	term.h \
+	textbuffer.h \
+	textbuffer-view.h
 
 noinst_HEADERS = \
-        gui-entry.h \
-        gui-printtext.h \
-        gui-readline.h \
-        gui-windows.h \
-        mainwindows.h \
-        statusbar.h \
-        statusbar-config.h \
-	term.h \
+	gui-entry.h \
+	gui-readline.h \
+	statusbar-config.h \
 	terminfo-core.h \
-        textbuffer.h \
-        textbuffer-view.h \
 	module.h \
 	module-formats.h
 

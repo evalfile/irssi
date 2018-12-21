@@ -116,11 +116,14 @@ static char **split_line(const SERVER_REC *server, const char *line,
 	 * the code much simpler.  It's worth it.
 	 */
 	len -= strlen(recoded_start) + strlen(recoded_end);
+	g_warn_if_fail(len > 0);
 	if (len <= 0) {
 		/* There is no room for anything. */
 		g_free(recoded_start);
 		g_free(recoded_end);
-		return NULL;
+		lines = g_new(char *, 1);
+		lines[0] = NULL;
+		return lines;
 	}
 
 	lines = recode_split(server, line, target, len, onspace);
@@ -233,9 +236,9 @@ static void server_init(IRC_SERVER_REC *server)
 	}
 
 	if (conn->sasl_mechanism != SASL_MECHANISM_NONE)
-		cap_toggle(server, "sasl", TRUE);
+		irc_cap_toggle(server, "sasl", TRUE);
 
-	cap_toggle(server, "multi-prefix", TRUE);
+	irc_cap_toggle(server, "multi-prefix", TRUE);
 
 	irc_send_cmd_now(server, "CAP LS");
 
@@ -422,7 +425,7 @@ static void isupport_destroy_hash(void *key, void *value)
 	g_free(value);
 }
 
-static void sig_disconnected(IRC_SERVER_REC *server)
+static void sig_destroyed(IRC_SERVER_REC *server)
 {
 	GSList *tmp;
 
@@ -440,8 +443,10 @@ static void sig_disconnected(IRC_SERVER_REC *server)
 	gslist_free_full(server->cap_active, (GDestroyNotify) g_free);
 	server->cap_active = NULL;
 
-	gslist_free_full(server->cap_supported, (GDestroyNotify) g_free);
-	server->cap_supported = NULL;
+	if (server->cap_supported) {
+		g_hash_table_destroy(server->cap_supported);
+		server->cap_supported = NULL;
+	}
 
 	gslist_free_full(server->cap_queue, (GDestroyNotify) g_free);
 	server->cap_queue = NULL;
@@ -1028,7 +1033,7 @@ void irc_servers_init(void)
 	cmd_tag = -1;
 
 	signal_add_first("server connected", (SIGNAL_FUNC) sig_connected);
-	signal_add_last("server disconnected", (SIGNAL_FUNC) sig_disconnected);
+	signal_add_last("server destroyed", (SIGNAL_FUNC) sig_destroyed);
 	signal_add_last("server quit", (SIGNAL_FUNC) sig_server_quit);
 	signal_add("event 001", (SIGNAL_FUNC) event_connected);
 	signal_add("event 004", (SIGNAL_FUNC) event_server_info);
@@ -1055,7 +1060,7 @@ void irc_servers_deinit(void)
 		g_source_remove(cmd_tag);
 
 	signal_remove("server connected", (SIGNAL_FUNC) sig_connected);
-	signal_remove("server disconnected", (SIGNAL_FUNC) sig_disconnected);
+	signal_remove("server destroyed", (SIGNAL_FUNC) sig_destroyed);
         signal_remove("server quit", (SIGNAL_FUNC) sig_server_quit);
 	signal_remove("event 001", (SIGNAL_FUNC) event_connected);
 	signal_remove("event 004", (SIGNAL_FUNC) event_server_info);

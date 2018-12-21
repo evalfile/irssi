@@ -43,6 +43,12 @@ GET_DCC_REC *dcc_get_create(IRC_SERVER_REC *server, CHAT_DCC_REC *chat,
 	dcc->fhandle = -1;
 
 	dcc_init_rec(DCC(dcc), server, chat, nick, arg);
+	if (dcc->module_data == NULL) {
+		/* failed to successfully init; TODO: change API */
+		g_free(dcc);
+		return NULL;
+	}
+
         return dcc;
 }
 
@@ -347,8 +353,12 @@ void sig_dccget_connected(GET_DCC_REC *dcc)
 
 		if (temphandle == -1)
 			ret = -1;
-		else
-			ret = fchmod(temphandle, dcc_file_create_mode);
+		else {
+			if (fchmod(temphandle, dcc_file_create_mode) != 0)
+				g_warning("fchmod(3) failed: %s", strerror(errno));
+			/* proceed even if chmod fails */
+			ret = 0;
+		}
 
 		close(temphandle);
 
@@ -359,7 +369,7 @@ void sig_dccget_connected(GET_DCC_REC *dcc)
 			    /* Linux */
 			    (errno == EPERM ||
 			     /* FUSE */
-			     errno == ENOSYS ||
+			     errno == ENOSYS || errno == EACCES ||
 			     /* BSD */
 			     errno == EOPNOTSUPP)) {
 				/* hard links aren't supported - some people
@@ -507,6 +517,8 @@ int get_file_params_count(char **params, int paramcount)
 	if (*params[0] == '"') {
 		/* quoted file name? */
 		for (pos = 0; pos < paramcount-3; pos++) {
+			if (strlen(params[pos]) == 0)
+				continue;
 			if (params[pos][strlen(params[pos])-1] == '"' &&
 			    get_params_match(params, pos+1))
 				return pos+1;
@@ -668,6 +680,11 @@ static void ctcp_msg_dcc_send(IRC_SERVER_REC *server, const char *data,
 	int p_id = -1;
 	int passive = FALSE;
 
+	if (addr == NULL)
+		addr = "";
+	if (nick == NULL)
+		nick = "";
+
 	/* SEND <file name> <address> <port> <size> [...] */
 	/* SEND <file name> <address> 0 <size> <id> (DCC SEND passive protocol) */
 	params = g_strsplit(data, " ", -1);
@@ -746,6 +763,12 @@ static void ctcp_msg_dcc_send(IRC_SERVER_REC *server, const char *data,
 		dcc_destroy(DCC(dcc)); /* remove the old DCC */
 
 	dcc = dcc_get_create(server, chat, nick, fname);
+	if (dcc == NULL) {
+		g_free(address);
+		g_free(fname);
+		g_warn_if_reached();
+		return;
+	}
 	dcc->target = g_strdup(target);
 
 	if (passive && port == 0)

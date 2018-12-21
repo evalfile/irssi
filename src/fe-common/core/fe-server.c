@@ -117,7 +117,18 @@ static void cmd_server_add_modify(const char *data, gboolean add)
 		return;
 
 	if (*addr == '\0') cmd_param_error(CMDERR_NOT_ENOUGH_PARAMS);
-	port = *portstr == '\0' ? DEFAULT_SERVER_ADD_PORT : atoi(portstr);
+
+	value = g_hash_table_lookup(optlist, "port");
+
+	if (*portstr != '\0')
+		port = atoi(portstr);
+	else if (value != NULL && *value != '\0')
+		port = atoi(value);
+	else if (g_hash_table_lookup(optlist, "tls") ||
+		 g_hash_table_lookup(optlist, "ssl"))
+		port = DEFAULT_SERVER_ADD_TLS_PORT;
+	else
+		port = DEFAULT_SERVER_ADD_PORT;
 
 	chatnet = g_hash_table_lookup(optlist, "network");
 
@@ -125,9 +136,9 @@ static void cmd_server_add_modify(const char *data, gboolean add)
 
 	if (rec == NULL) {
 		if (add == FALSE) {
-			cmd_params_free(free_arg);
 			printformat(NULL, NULL, MSGLEVEL_CLIENTNOTICE,
 				TXT_SETUPSERVER_NOT_FOUND, addr, port);
+			cmd_params_free(free_arg);
 			return;
 		}
 
@@ -139,8 +150,8 @@ static void cmd_server_add_modify(const char *data, gboolean add)
 		rec->address = g_strdup(addr);
 		rec->port = port;
 	} else {
-		value = g_hash_table_lookup(optlist, "port");
-		if (value != NULL && *value != '\0') rec->port = atoi(value);
+		if (*portstr != '\0' || g_hash_table_lookup(optlist, "port"))
+			rec->port = port;
 
 		if (*password != '\0') g_free_and_null(rec->password);
 		if (g_hash_table_lookup(optlist, "host")) {
@@ -154,8 +165,14 @@ static void cmd_server_add_modify(const char *data, gboolean add)
         else if (g_hash_table_lookup(optlist, "4"))
 		rec->family = AF_INET;
 
-	if (g_hash_table_lookup(optlist, "tls") || g_hash_table_lookup(optlist, "ssl"))
+	if (g_hash_table_lookup(optlist, "tls") || g_hash_table_lookup(optlist, "ssl")) {
 		rec->use_tls = TRUE;
+	}
+	else if (g_hash_table_lookup(optlist, "notls") || g_hash_table_lookup(optlist, "nossl")) {
+		rec->use_tls = FALSE;
+		/* tls_verify implies use_tls, disable it explicitly */
+		rec->tls_verify = FALSE;
+	}
 
 	value = g_hash_table_lookup(optlist, "tls_cert");
 	if (value == NULL)
@@ -177,6 +194,8 @@ static void cmd_server_add_modify(const char *data, gboolean add)
 
 	if (g_hash_table_lookup(optlist, "tls_verify") || g_hash_table_lookup(optlist, "ssl_verify"))
 		rec->tls_verify = TRUE;
+	else if (g_hash_table_lookup(optlist, "notls_verify") || g_hash_table_lookup(optlist, "nossl_verify"))
+		rec->tls_verify = FALSE;
 
 	value = g_hash_table_lookup(optlist, "tls_cafile");
 	if (value == NULL)
@@ -434,8 +453,8 @@ void fe_server_init(void)
 	command_bind_first("server", NULL, (SIGNAL_FUNC) server_command);
 	command_bind_first("disconnect", NULL, (SIGNAL_FUNC) server_command);
 
-	command_set_options("server add", "4 6 !! ssl +ssl_cert +ssl_pkey +ssl_pass ssl_verify +ssl_cafile +ssl_capath +ssl_ciphers +ssl_fingerprint tls +tls_cert +tls_pkey +tls_pass tls_verify +tls_cafile +tls_capath +tls_ciphers +tls_pinned_cert +tls_pinned_pubkey auto noauto proxy noproxy -host -port noautosendcmd");
-	command_set_options("server modify", "4 6 !! ssl +ssl_cert +ssl_pkey +ssl_pass ssl_verify +ssl_cafile +ssl_capath +ssl_ciphers +ssl_fingerprint tls +tls_cert +tls_pkey +tls_pass tls_verify +tls_cafile +tls_capath +tls_ciphers +tls_pinned_cert +tls_pinned_pubkey auto noauto proxy noproxy -host -port noautosendcmd");
+	command_set_options("server add", "4 6 !! ssl nossl +ssl_cert +ssl_pkey +ssl_pass ssl_verify nossl_verify +ssl_cafile +ssl_capath +ssl_ciphers +ssl_fingerprint tls notls +tls_cert +tls_pkey +tls_pass tls_verify notls_verify +tls_cafile +tls_capath +tls_ciphers +tls_pinned_cert +tls_pinned_pubkey auto noauto proxy noproxy -host -port noautosendcmd");
+	command_set_options("server modify", "4 6 !! ssl nossl +ssl_cert +ssl_pkey +ssl_pass ssl_verify nossl_verify +ssl_cafile +ssl_capath +ssl_ciphers +ssl_fingerprint tls notls +tls_cert +tls_pkey +tls_pass tls_verify notls_verify +tls_cafile +tls_capath +tls_ciphers +tls_pinned_cert +tls_pinned_pubkey auto noauto proxy noproxy -host -port noautosendcmd");
 
 	signal_add("server looking", (SIGNAL_FUNC) sig_server_looking);
 	signal_add("server connecting", (SIGNAL_FUNC) sig_server_connecting);

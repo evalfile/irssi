@@ -26,6 +26,7 @@
 #include "misc.h"
 #include "lib-config/iconfig.h"
 #include "settings.h"
+#include "iregex.h"
 
 #include "servers.h"
 #include "channels.h"
@@ -44,7 +45,7 @@ static void reset_level_cache(void)
 {
 	GSList *tmp;
 
-        never_hilight_level = MSGLEVEL_ALL & ~default_hilight_level;
+	never_hilight_level = MSGLEVEL_ALL & ~default_hilight_level;
 	for (tmp = hilights; tmp != NULL; tmp = tmp->next) {
 		HILIGHT_REC *rec = tmp->data;
 
@@ -101,14 +102,11 @@ static void hilight_destroy(HILIGHT_REC *rec)
 {
 	g_return_if_fail(rec != NULL);
 
-#ifdef USE_GREGEX
-	if (rec->preg != NULL) g_regex_unref(rec->preg);
-#else
-	if (rec->regexp_compiled) regfree(&rec->preg);
-#endif
+	if (rec->preg != NULL) i_regex_unref(rec->preg);
 	if (rec->channels != NULL) g_strfreev(rec->channels);
 	g_free_not_null(rec->color);
 	g_free_not_null(rec->act_color);
+	g_free_not_null(rec->servertag);
 	g_free(rec->text);
 	g_free(rec);
 }
@@ -122,19 +120,10 @@ static void hilights_destroy_all(void)
 
 static void hilight_init_rec(HILIGHT_REC *rec)
 {
-#ifdef USE_GREGEX
 	if (rec->preg != NULL)
-		g_regex_unref(rec->preg);
+		i_regex_unref(rec->preg);
 
-	rec->preg = g_regex_new(rec->text, G_REGEX_OPTIMIZE | G_REGEX_RAW | G_REGEX_CASELESS, 0, NULL);
-#else
-	if (rec->regexp_compiled) regfree(&rec->preg);
-	if (!rec->regexp)
-		rec->regexp_compiled = FALSE;
-	else
-		rec->regexp_compiled = regcomp(&rec->preg, rec->text,
-				rec->case_sensitive ? REG_EXTENDED : (REG_EXTENDED|REG_ICASE)) == 0;
-#endif
+	rec->preg = i_regex_new(rec->text, G_REGEX_OPTIMIZE | G_REGEX_CASELESS, 0, NULL);
 }
 
 void hilight_create(HILIGHT_REC *rec)
@@ -191,7 +180,7 @@ static HILIGHT_REC *hilight_find(const char *text, char **channels)
 		/* check that channels match */
 		for (chan = channels; *chan != NULL; chan++) {
 			if (strarray_find(rec->channels, *chan) == -1)
-                                break;
+				break;
 		}
 
 		if (*chan == NULL)
@@ -207,30 +196,15 @@ static gboolean hilight_match_text(HILIGHT_REC *rec, const char *text,
 	gboolean ret = FALSE;
 
 	if (rec->regexp) {
-#ifdef USE_GREGEX
 		if (rec->preg != NULL) {
-			GMatchInfo *match;
+			MatchInfo *match;
+			i_regex_match(rec->preg, text, 0, &match);
 
-			g_regex_match (rec->preg, text, 0, &match);
+			if (i_match_info_matches(match))
+				ret = i_match_info_fetch_pos(match, 0, match_beg, match_end);
 
-			if (g_match_info_matches(match))
-				ret = g_match_info_fetch_pos(match, 0, match_beg, match_end);
-
-			g_match_info_free(match);
+			i_match_info_free(match);
 		}
-#else
-		regmatch_t rmatch[1];
-
-		if (rec->regexp_compiled &&
-			regexec(&rec->preg, text, 1, rmatch, 0) == 0) {
-			if (rmatch[0].rm_so > 0 &&
-				match_beg != NULL && match_end != NULL) {
-				*match_beg = rmatch[0].rm_so;
-				*match_end = rmatch[0].rm_eo;
-			}
-			ret = TRUE;
-		}
-#endif
 	} else {
 		char *match;
 
@@ -265,10 +239,10 @@ static gboolean hilight_match_text(HILIGHT_REC *rec, const char *text,
 HILIGHT_REC *hilight_match(SERVER_REC *server, const char *channel,
 			   const char *nick, const char *address,
 			   int level, const char *str,
-                           int *match_beg, int *match_end)
+			   int *match_beg, int *match_end)
 {
 	GSList *tmp;
-        CHANNEL_REC *chanrec;
+	CHANNEL_REC *chanrec;
 	NICK_REC *nickrec;
 
 	g_return_val_if_fail(str != NULL, NULL);
@@ -277,12 +251,12 @@ HILIGHT_REC *hilight_match(SERVER_REC *server, const char *channel,
 		return NULL;
 
 	if (nick != NULL) {
-                /* check nick mask hilights */
+		/* check nick mask hilights */
 		chanrec = channel_find(server, channel);
 		nickrec = chanrec == NULL ? NULL :
 			nicklist_find(chanrec, nick);
 		if (nickrec != NULL) {
-                        HILIGHT_REC *rec;
+			HILIGHT_REC *rec;
 
 			if (nickrec->host == NULL)
 				nicklist_set_host(chanrec, nickrec, address);
@@ -414,10 +388,10 @@ static void sig_print_text(TEXT_DEST_REC *dest, const char *text,
 		/* end of the line */
 		pos = strip_real_length(text, hilight_end,
 					&color_pos, &color_len);
-		if (color_pos > 0)
+		if (color_pos > 0) {
 			g_string_append_len(tmp, text + color_pos, color_len);
-                else {
-                        /* no colors in line, change back to default */
+		} else {
+			/* no colors in line, change back to default */
 			g_string_append_c(tmp, 4);
 			g_string_append_c(tmp, FORMAT_STYLE_DEFAULTS);
 		}
@@ -439,7 +413,7 @@ HILIGHT_REC *hilight_match_nick(SERVER_REC *server, const char *channel,
 			 const char *nick, const char *address,
 			 int level, const char *msg)
 {
-        HILIGHT_REC *rec;
+	HILIGHT_REC *rec;
 
 	rec = hilight_match(server, channel, nick, address,
 				level, msg, NULL, NULL);
@@ -451,13 +425,13 @@ static void read_hilight_config(void)
 	CONFIG_NODE *node;
 	HILIGHT_REC *rec;
 	GSList *tmp;
-	char *text, *color;
+	char *text, *color, *servertag;
 
 	hilights_destroy_all();
 
 	node = iconfig_node_traverse("hilights", FALSE);
 	if (node == NULL) {
-                reset_cache();
+		reset_cache();
 		return;
 	}
 
@@ -494,7 +468,9 @@ static void read_hilight_config(void)
 		rec->nickmask = config_node_get_bool(node, "mask", FALSE);
 		rec->fullword = config_node_get_bool(node, "fullword", FALSE);
 		rec->regexp = config_node_get_bool(node, "regexp", FALSE);
-		rec->servertag = config_node_get_str(node, "servertag", NULL);
+		servertag = config_node_get_str(node, "servertag", NULL);
+		rec->servertag = servertag == NULL || *servertag == '\0' ? NULL :
+			g_strdup(servertag);
 		hilight_init_rec(rec);
 
 		node = iconfig_node_section(node, "channels", -1);
@@ -524,13 +500,8 @@ static void hilight_print(int index, HILIGHT_REC *rec)
 	if (rec->case_sensitive) g_string_append(options, "-matchcase ");
 	if (rec->regexp) {
 		g_string_append(options, "-regexp ");
-#ifdef USE_GREGEX
 		if (rec->preg == NULL)
 			g_string_append(options, "[INVALID!] ");
-#else
-		if (!rec->regexp_compiled)
-			g_string_append(options, "[INVALID!] ");
-#endif
 	}
 
 	if (rec->priority != 0)
@@ -574,8 +545,8 @@ static void cmd_hilight_show(void)
 }
 
 /* SYNTAX: HILIGHT [-nick | -word | -line] [-mask | -full | -matchcase | -regexp]
-                   [-color <color>] [-actcolor <color>] [-level <level>]
-		   [-network <network>] [-channels <channels>] <text> */
+   [-color <color>] [-actcolor <color>] [-level <level>]
+   [-network <network>] [-channels <channels>] <text> */
 static void cmd_hilight(const char *data)
 {
 	GHashTable *optlist;
