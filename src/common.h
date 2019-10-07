@@ -1,19 +1,17 @@
-#ifndef __COMMON_H
-#define __COMMON_H
+#ifndef IRSSI_COMMON_H
+#define IRSSI_COMMON_H
 
 #define IRSSI_DIR_FULL "%s/.irssi" /* %s == g_get_home_dir() */
 
 #define IRSSI_GLOBAL_CONFIG "irssi.conf" /* config file name in /etc/ */
 #define IRSSI_HOME_CONFIG "config" /* config file name in ~/.irssi/ */
 
-#define IRSSI_ABI_VERSION 19
+#define IRSSI_ABI_VERSION 23
 
 #define DEFAULT_SERVER_ADD_PORT 6667
 #define DEFAULT_SERVER_ADD_TLS_PORT 6697
 
-#ifdef HAVE_CONFIG_H
-#include "irssi-config.h"
-#endif
+#include <irssi/irssi-config.h>
 
 #include <stdio.h>
 #include <stddef.h>
@@ -43,15 +41,8 @@
 #  include <gmodule.h>
 #endif
 
-#if defined (UOFF_T_INT)
-typedef unsigned int uoff_t;
-#elif defined (UOFF_T_LONG)
-typedef unsigned long uoff_t;
-#elif defined (UOFF_T_LONG_LONG)
-typedef unsigned long long uoff_t;
-#else
-#  error uoff_t size not set
-#endif
+typedef guint64 uoff_t;
+#define PRIuUOFF_T G_GUINT64_FORMAT
 
 /* input functions */
 #define G_INPUT_READ	(1 << 0)

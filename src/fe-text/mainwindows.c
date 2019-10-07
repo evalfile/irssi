@@ -19,16 +19,16 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "signals.h"
-#include "commands.h"
-#include "levels.h"
-#include "misc.h"
-#include "settings.h"
-#include "printtext.h"
+#include <irssi/src/fe-text/module-formats.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/settings.h>
+#include <irssi/src/fe-common/core/printtext.h>
 
-#include "term.h"
-#include "gui-windows.h"
+#include <irssi/src/fe-text/term.h>
+#include <irssi/src/fe-text/gui-windows.h>
 
 #define NEW_WINDOW_SIZE (WINDOW_MIN_SIZE + 1)
 
@@ -829,7 +829,7 @@ void mainwindows_resize(int width, int height)
 	}
 
 	/* if we lost our active mainwin, get a new one */
-	if (active_mainwin == NULL && !quitting) {
+	if (active_mainwin == NULL && active_win != NULL && !quitting) {
 		active_mainwin = WINDOW_MAIN(active_win);
 		window_set_active(active_mainwin->active);
 	}
@@ -1298,9 +1298,7 @@ static void window_balance_vertical(void)
 				rec->last_line++;
 			}
 
-			rec->height = rec->last_line-rec->first_line+1;
-
-			mainwindow_resize(rec, 0, rec->height-old_size);
+			mainwindow_resize(rec, 0, rec->last_line - rec->first_line + 1 - old_size);
 		}
 		if (line != NULL && bigger_units > 0) {
 			bigger_units--;

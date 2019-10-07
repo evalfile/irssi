@@ -19,8 +19,8 @@
  * Franklin Street, Fifth Floor, Boston, MA 02110-1301,USA
  */
 
-#include "otr.h"
-#include "otr-formats.h"
+#include <irssi/src/otr/otr.h>
+#include <irssi/src/otr/otr-formats.h>
 
 FORMAT_REC fe_otr_formats[] = {
 	{ MODULE_NAME, "Core", 0 },
@@ -78,7 +78,7 @@ FORMAT_REC fe_otr_formats[] = {
 	{ "otr_msg_error", "Error in private conversation: {error $0}", 1, { 0 }},
 	{ "otr_msg_general_error", "General Error: {error $0}", 1, { 0 }},
 	{ "otr_msg_malformed", "Malformed message from {hilight $0}", 1, { 0 }},
-	{ "otr_msg_not_in_private", "The encrypted message from {hilight $0} was is unreadable because you're not communicating privately", 1, { 0 }},
+	{ "otr_msg_not_in_private", "The encrypted message from {hilight $0} was unreadable because you're not communicating privately", 1, { 0 }},
 	{ "otr_msg_reflected", "Received reflected message from {hilight $0}", 0, { 0 }},
 	{ "otr_msg_resent", "The last message to {hilight $0} was resent: $1", 2, { 0, 0 }},
 	{ "otr_msg_unencrypted", "The following message from {hilight $0} was {error not} encrypted", 1, { 0 }},

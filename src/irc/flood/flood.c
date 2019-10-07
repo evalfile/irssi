@@ -19,15 +19,15 @@
 */
 
 #include "module.h"
-#include "modules.h"
-#include "signals.h"
-#include "levels.h"
-#include "misc.h"
-#include "settings.h"
+#include <irssi/src/core/modules.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/settings.h>
 
-#include "irc.h"
-#include "irc-servers.h"
-#include "ignore.h"
+#include <irssi/src/irc/core/irc.h>
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/core/ignore.h>
 
 void autoignore_init(void);
 void autoignore_deinit(void);
@@ -346,3 +346,5 @@ void irc_flood_deinit(void)
 	signal_remove("server connected", (SIGNAL_FUNC) flood_init_server);
 	signal_remove("server destroyed", (SIGNAL_FUNC) flood_deinit_server);
 }
+
+MODULE_ABICHECK(irc_flood)

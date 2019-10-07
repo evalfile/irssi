@@ -18,11 +18,13 @@ available.
 
 #### Development source installation
 
+[Ninja](https://ninja-build.org/) 1.5 and [Meson](https://mesonbuild.com/) 0.49
+
 ```
 git clone https://github.com/irssi/irssi
 cd irssi
-./autogen.sh
-make && sudo make install
+meson Build
+ninja -C Build && sudo ninja -C Build install
 ```
 
 #### Release source installation

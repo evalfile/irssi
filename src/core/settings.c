@@ -19,14 +19,14 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "commands.h"
-#include "levels.h"
-#include "misc.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/misc.h>
 
-#include "lib-config/iconfig.h"
-#include "recode.h"
-#include "settings.h"
+#include <irssi/src/lib-config/iconfig.h>
+#include <irssi/src/core/recode.h>
+#include <irssi/src/core/settings.h>
 #include "default-config.h"
 
 #include <signal.h>
@@ -229,6 +229,7 @@ static void settings_add(const char *module, const char *section,
 		if (rec->type != type) {
 			g_warning("Trying to add already existing "
 				  "setting '%s' with different type.", key);
+			g_strfreev(choices_vec);
 			return;
 		}
 		rec->refcount++;

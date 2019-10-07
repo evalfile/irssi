@@ -19,10 +19,10 @@
 */
 
 #include "module.h"
-#include "network.h"
-#include "misc.h"
+#include <irssi/src/core/network.h>
+#include <irssi/src/core/misc.h>
 
-#include "servers.h"
+#include <irssi/src/core/servers.h>
 
 /* Returns TRUE if mask contains '!' ie. address should be checked too.
    Also checks if mask contained any wildcards. */
@@ -68,7 +68,7 @@ int mask_match(SERVER_REC *server, const char *mask,
 
 	g_return_val_if_fail(server == NULL || IS_SERVER(server), FALSE);
 	g_return_val_if_fail(mask != NULL && nick != NULL &&
-			     nick != NULL && host != NULL, FALSE);
+			     user != NULL && host != NULL, FALSE);
 
 	str = !check_address(mask, &wildcards) ? (char *) nick :
 		g_strdup_printf("%s!%s@%s", nick, user, host);

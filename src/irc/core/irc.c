@@ -19,19 +19,20 @@
 */
 
 #include "module.h"
-#include "modules.h"
-#include "network.h"
-#include "net-sendbuffer.h"
-#include "rawlog.h"
-#include "misc.h"
+#include <irssi/src/core/modules.h>
+#include <irssi/src/core/network.h>
+#include <irssi/src/core/net-sendbuffer.h>
+#include <irssi/src/core/rawlog.h>
+#include <irssi/src/core/misc.h>
 
-#include "irc-servers.h"
-#include "irc-channels.h"
-#include "servers-redirect.h"
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
+#include <irssi/src/irc/core/servers-redirect.h>
 
 char *current_server_event;
 static int signal_default_event;
 static int signal_server_event;
+static int signal_server_event_tags;
 static int signal_server_incoming;
 
 #ifdef BLOCKING_SOCKETS
@@ -48,8 +49,9 @@ static void strip_params_colon(char *const);
 void irc_send_cmd_full(IRC_SERVER_REC *server, const char *cmd,
 		       int send_now, int immediate, int raw)
 {
-	char str[513];
+	GString *str;
 	int len;
+	gboolean server_supports_tag;
 
 	g_return_if_fail(server != NULL);
 	g_return_if_fail(cmd != NULL);
@@ -57,35 +59,66 @@ void irc_send_cmd_full(IRC_SERVER_REC *server, const char *cmd,
 	if (server->connection_lost)
 		return;
 
-	len = strlen(cmd);
+	str = g_string_sized_new(MAX_IRC_USER_TAGS_LEN + 2 /* `@'+SPACE */ +
+				 server->max_message_len + 2 /* CR+LF */ + 1 /* `\0' */);
+
 	if (server->cmdcount == 0)
 		irc_servers_start_cmd_timeout();
 	server->cmdcount++;
 
 	if (!raw) {
+		const char *tmp = cmd;
+
+		server_supports_tag = server->cap_supported != NULL &&
+			g_hash_table_lookup_extended(server->cap_supported, CAP_MESSAGE_TAGS, NULL, NULL);
+
+		if (*cmd == '@' && server_supports_tag) {
+			const char *end;
+
+			while (*tmp != ' ' && *tmp != '\0')
+				tmp++;
+
+			end = tmp;
+
+			if (tmp - cmd > MAX_IRC_USER_TAGS_LEN) {
+				g_warning("irc_send_cmd_full(); tags too long(%ld)", tmp - cmd);
+				while (tmp - cmd > MAX_IRC_USER_TAGS_LEN && cmd != tmp - 1) tmp--;
+				while (*tmp != ',' && cmd != tmp - 1) tmp--;
+			}
+			if (cmd != tmp)
+				g_string_append_len(str, cmd, tmp - cmd);
+
+			tmp = end;
+			while (*tmp == ' ') tmp++;
+
+			if (*tmp != '\0' && str->len > 0)
+				g_string_append_c(str, ' ');
+		}
+		len = strlen(tmp);
+
 		/* check that we don't send any longer commands
 		   than 510 bytes (2 bytes for CR+LF) */
-		strncpy(str, cmd, 510);
-		if (len > 510) len = 510;
-		str[len] = '\0';
-                cmd = str;
+		g_string_append_len(str, tmp, len > server->max_message_len ?
+				    server->max_message_len : len);
+	} else {
+		g_string_append(str, cmd);
 	}
 
 	if (send_now) {
-		rawlog_output(server->rawlog, cmd);
-		server_redirect_command(server, cmd, server->redirect_next);
+		rawlog_output(server->rawlog, str->str);
+		server_redirect_command(server, str->str, server->redirect_next);
                 server->redirect_next = NULL;
 	}
 
 	if (!raw) {
                 /* Add CR+LF to command */
-		str[len++] = 13;
-		str[len++] = 10;
-		str[len] = '\0';
+		g_string_append_c(str, 13);
+		g_string_append_c(str, 10);
 	}
 
 	if (send_now) {
-                irc_server_send_data(server, cmd, len);
+                irc_server_send_data(server, str->str, str->len);
+		g_string_free(str, TRUE);
 	} else {
 
 		/* add to queue */
@@ -93,10 +126,10 @@ void irc_send_cmd_full(IRC_SERVER_REC *server, const char *cmd,
 			server->cmdqueue = g_slist_prepend(server->cmdqueue,
 							   server->redirect_next);
 			server->cmdqueue = g_slist_prepend(server->cmdqueue,
-							   g_strdup(cmd));
+							   g_string_free(str, FALSE));
 		} else {
 			server->cmdqueue = g_slist_append(server->cmdqueue,
-							  g_strdup(cmd));
+							  g_string_free(str, FALSE));
 			server->cmdqueue = g_slist_append(server->cmdqueue,
 							  server->redirect_next);
 		}
@@ -158,6 +191,14 @@ static char *split_nicks(const char *cmd, char **pre, char **nicks, char **post,
 
 	*pre = g_strdup(cmd);
 	*post = *nicks = NULL;
+
+	if (**pre == '@') {
+		/* the message-tags "add" one space separated argument
+		   in front of the non message-tagged IRC commands. So
+		   the nicks are now off-set by one to the right. */
+		arg++;
+	}
+
 	for (p = *pre; *p != '\0'; p++) {
 		if (*p != ' ')
 			continue;
@@ -342,13 +383,31 @@ static void irc_server_event(IRC_SERVER_REC *server, const char *line,
 	g_free(event);
 }
 
-static char *irc_parse_prefix(char *line, char **nick, char **address)
+static void irc_server_event_tags(IRC_SERVER_REC *server, const char *line,
+				  const char *nick, const char *address, const char *tags)
+{
+	if (*line != '\0')
+		signal_emit_id(signal_server_event, 4, server, line, nick, address);
+}
+
+static char *irc_parse_prefix(char *line, char **nick, char **address, char **tags)
 {
 	char *p;
 
-	*nick = *address = NULL;
+	*nick = *address = *tags = NULL;
 
-	/* :<nick> [["!" <user>] "@" <host>] SPACE */
+	/* ["@" <tags> SPACE] :<nick> [["!" <user>] "@" <host>] SPACE */
+
+	if (*line == '@') {
+		*tags = ++line;
+		while (*line != '\0' && *line != ' ') {
+			line++;
+		}
+		if (*line == ' ') {
+			*line++ = '\0';
+			while (*line == ' ') line++;
+		}
+	}
 
 	if (*line != ':')
 		return line;
@@ -382,14 +441,14 @@ static char *irc_parse_prefix(char *line, char **nick, char **address)
 /* Parse command line sent by server */
 static void irc_parse_incoming_line(IRC_SERVER_REC *server, char *line)
 {
-	char *nick, *address;
+	char *nick, *address, *tags;
 
 	g_return_if_fail(server != NULL);
 	g_return_if_fail(line != NULL);
 
-	line = irc_parse_prefix(line, &nick, &address);
-	if (*line != '\0')
-		signal_emit_id(signal_server_event, 4, server, line, nick, address);
+	line = irc_parse_prefix(line, &nick, &address, &tags);
+	if (*line != '\0' || tags != NULL)
+		signal_emit_id(signal_server_event_tags, 5, server, line, nick, address, tags);
 }
 
 /* input function: handle incoming server messages */
@@ -441,18 +500,21 @@ static void irc_init_server(IRC_SERVER_REC *server)
 void irc_irc_init(void)
 {
 	signal_add("server event", (SIGNAL_FUNC) irc_server_event);
+	signal_add("server event tags", (SIGNAL_FUNC) irc_server_event_tags);
 	signal_add("server connected", (SIGNAL_FUNC) irc_init_server);
 	signal_add("server incoming", (SIGNAL_FUNC) irc_parse_incoming_line);
 
 	current_server_event = NULL;
 	signal_default_event = signal_get_uniq_id("default event");
 	signal_server_event = signal_get_uniq_id("server event");
+	signal_server_event_tags = signal_get_uniq_id("server event tags");
 	signal_server_incoming = signal_get_uniq_id("server incoming");
 }
 
 void irc_irc_deinit(void)
 {
 	signal_remove("server event", (SIGNAL_FUNC) irc_server_event);
+	signal_remove("server event tags", (SIGNAL_FUNC) irc_server_event_tags);
 	signal_remove("server connected", (SIGNAL_FUNC) irc_init_server);
 	signal_remove("server incoming", (SIGNAL_FUNC) irc_parse_incoming_line);
 }

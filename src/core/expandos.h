@@ -1,7 +1,7 @@
-#ifndef __EXPANDOS_H
-#define __EXPANDOS_H
+#ifndef IRSSI_CORE_EXPANDOS_H
+#define IRSSI_CORE_EXPANDOS_H
 
-#include "signals.h"
+#include <irssi/src/core/signals.h>
 
 /* first argument of signal must match to active .. */
 typedef enum {
@@ -17,6 +17,7 @@ typedef char* (*EXPANDO_FUNC)
 	(SERVER_REC *server, void *item, int *free_ret);
 
 extern const char *current_expando;
+extern time_t current_time;
 
 /* Create expando - overrides any existing ones.
    ... = signal, type, ..., NULL - list of signals that might change the

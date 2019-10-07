@@ -1,9 +1,31 @@
-#ifndef __IRC_SERVERS_H
-#define __IRC_SERVERS_H
+#ifndef IRSSI_IRC_CORE_IRC_SERVERS_H
+#define IRSSI_IRC_CORE_IRC_SERVERS_H
 
-#include "chat-protocols.h"
-#include "servers.h"
-#include "modes.h"
+#include <irssi/src/core/chat-protocols.h>
+#include <irssi/src/core/servers.h>
+#include <irssi/src/irc/core/modes.h>
+
+/*
+ * 63 is the maximum hostname length defined by the protocol.  10 is a common
+ * username limit on many networks.  1 is for the `@'.
+ */
+#define MAX_USERHOST_LEN (63 + 10 + 1)
+#define MAX_IRC_MESSAGE_LEN (512 - 2) /* (2 bytes for CR+LF) */
+#define MAX_IRC_TAGS_LEN (8191 - 2) /* (2 bytes for `@' and SPACE) */
+#define MAX_IRC_USER_TAGS_LEN 4094
+
+#define CAP_LS_VERSION "302"
+#define CAP_MAXLINE "oragono.io/maxline-2"
+#define CAP_MESSAGE_TAGS "message-tags"
+#define CAP_SASL "sasl"
+#define CAP_MULTI_PREFIX "multi-prefix"
+#define CAP_EXTENDED_JOIN "extended-join"
+#define CAP_SETNAME "draft/setname"
+#define CAP_INVITE_NOTIFY "invite-notify"
+#define CAP_AWAY_NOTIFY "away-notify"
+#define CAP_CHGHOST "chghost"
+#define CAP_ACCOUNT_NOTIFY "account-notify"
+#define CAP_SELF_MESSAGE "znc.in/self-message"
 
 /* returns IRC_SERVER_REC if it's IRC server, NULL if it isn't */
 #define IRC_SERVER(server) \
@@ -22,7 +44,7 @@
 /* all strings should be either NULL or dynamically allocated */
 /* address and nick are mandatory, rest are optional */
 struct _IRC_SERVER_CONNECT_REC {
-#include "server-connect-rec.h"
+#include <irssi/src/core/server-connect-rec.h>
 
 	char *usermode;
 	char *alternate_nick;
@@ -40,7 +62,9 @@ struct _IRC_SERVER_CONNECT_REC {
 
 #define STRUCT_SERVER_CONNECT_REC IRC_SERVER_CONNECT_REC
 struct _IRC_SERVER_REC {
-#include "server-rec.h"
+#include <irssi/src/core/server-rec.h>
+
+	int max_message_len; /* Maximum message length, default = 510 = 512 - 2 (for CR+LF) */
 
 	/* For deciding if event should be redirected */
 	GSList *redirects;

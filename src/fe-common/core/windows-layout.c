@@ -19,22 +19,22 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
-#include "levels.h"
-#include "lib-config/iconfig.h"
-#include "settings.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/lib-config/iconfig.h>
+#include <irssi/src/core/settings.h>
 
-#include "chat-protocols.h"
-#include "servers.h"
-#include "channels.h"
-#include "queries.h"
+#include <irssi/src/core/chat-protocols.h>
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/queries.h>
 
-#include "module-formats.h"
-#include "printtext.h"
-#include "themes.h"
-#include "fe-windows.h"
-#include "window-items.h"
+#include <irssi/src/fe-common/core/module-formats.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/fe-common/core/themes.h>
+#include <irssi/src/fe-common/core/fe-windows.h>
+#include <irssi/src/fe-common/core/window-items.h>
 
 static WINDOW_REC *restore_win;
 
@@ -70,11 +70,12 @@ static void sig_layout_restore_item(WINDOW_REC *window, const char *type,
                 restore_win = window;
 
 		protocol = chat_protocol_find(chat_type);
-		if (protocol == NULL)
-			window_bind_add(window, tag, name);
-		else if (protocol->query_create != NULL)
+		if (protocol == NULL || protocol->not_initialized) {
+			WINDOW_BIND_REC *rec = window_bind_add(window, tag, name);
+			rec->type = module_get_uniq_id_str("WINDOW ITEM TYPE", "QUERY");
+		} else if (protocol->query_create != NULL) {
 			protocol->query_create(tag, name, TRUE);
-		else {
+		} else {
 			QUERY_REC *query;
 
 			query = g_new0(QUERY_REC, 1);

@@ -19,9 +19,10 @@
 */
 
 #include "module.h"
-#include "signals.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/settings.h>
 
-#include "gui-windows.h"
+#include <irssi/src/fe-text/gui-windows.h>
 
 /* Don't send window activity if window is already visible in
    another mainwindow */
@@ -30,6 +31,9 @@ static void sig_activity(WINDOW_REC *window)
 	GSList *tmp;
 
 	if (!is_window_visible(window) || window->data_level == 0)
+		return;
+
+	if (!settings_get_bool("activity_hide_visible"))
 		return;
 
 	window->data_level = 0;
@@ -46,6 +50,7 @@ static void sig_activity(WINDOW_REC *window)
 
 void mainwindow_activity_init(void)
 {
+	settings_add_bool("lookandfeel", "activity_hide_visible", TRUE);
 	signal_add_first("window hilight", (SIGNAL_FUNC) sig_activity);
 	signal_add_first("window activity", (SIGNAL_FUNC) sig_activity);
 }

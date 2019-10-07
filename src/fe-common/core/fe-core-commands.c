@@ -18,22 +18,22 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "core.h"
+#include <irssi/src/core/core.h>
 #include "module.h"
-#include "module-formats.h"
-#include "signals.h"
-#include "commands.h"
-#include "levels.h"
-#include "misc.h"
-#include "settings.h"
-#include "irssi-version.h"
-#include "servers.h"
+#include <irssi/src/fe-common/core/module-formats.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/settings.h>
+#include <irssi/irssi-version.h>
+#include <irssi/src/core/servers.h>
 #ifdef HAVE_CAPSICUM
-#include "capsicum.h"
+#include <irssi/src/core/capsicum.h>
 #endif
 
-#include "fe-windows.h"
-#include "printtext.h"
+#include <irssi/src/fe-common/core/fe-windows.h>
+#include <irssi/src/fe-common/core/printtext.h>
 
 #define PASTE_CHECK_SPEED 200 /* 0.2 sec */
 
@@ -68,7 +68,7 @@ static const char *current_cmdline;
 static GTimeVal time_command_last, time_command_now;
 static int last_command_cmd, command_cmd;
 
-/* SYNTAX: ECHO [-current] [-window <name>] [-level <level>] <text> */
+/* SYNTAX: ECHO [-window <name>] [-level <level>] <text> */
 static void cmd_echo(const char *data, void *server, WI_ITEM_REC *item)
 {
         WINDOW_REC *window;
@@ -114,10 +114,11 @@ static void cmd_version(char *data)
 	}
 }
 
-/* SYNTAX: CAT <file> [<seek position>] */
-static void cmd_cat(const char *data)
+/* SYNTAX: CAT [-window] <file> [<seek position>] */
+static void cmd_cat(const char *data, SERVER_REC *server, WI_ITEM_REC *item)
 {
-	char *fname, *fposstr;
+	char *fname, *fposstr, *target;
+	GHashTable *optlist;
 	void *free_arg;
 	int fpos;
 	GIOChannel *handle;
@@ -127,12 +128,14 @@ static void cmd_cat(const char *data)
 	int fd;
 #endif
 
-	if (!cmd_get_params(data, &free_arg, 2, &fname, &fposstr))
+	g_return_if_fail(data != NULL);
+
+	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_OPTIONS,
+				"cat", &optlist, &fname, &fposstr))
 		return;
 
 	fname = convert_home(fname);
 	fpos = atoi(fposstr);
-        cmd_params_free(free_arg);
 
 #ifdef HAVE_CAPSICUM
 	fd = capsicum_open_wrapper(fname, O_RDONLY, 0);
@@ -152,15 +155,18 @@ static void cmd_cat(const char *data)
 		return;
 	}
 
+	target = g_hash_table_lookup(optlist, "window") != NULL ? item->name : NULL;
+
 	g_io_channel_set_encoding(handle, NULL, NULL);
 	g_io_channel_seek_position(handle, fpos, G_SEEK_SET, NULL);
 	buf = g_string_sized_new(512);
 	while (g_io_channel_read_line_string(handle, buf, &tpos, NULL) == G_IO_STATUS_NORMAL) {
 		buf->str[tpos] = '\0';
-		printtext(NULL, NULL, MSGLEVEL_CLIENTCRAP |
+		printtext(target != NULL ? server : NULL, target, MSGLEVEL_CLIENTCRAP |
 			  MSGLEVEL_NEVER, "%s", buf->str);
 	}
 	g_string_free(buf, TRUE);
+	cmd_params_free(free_arg);
 
 	g_io_channel_unref(handle);
 }
@@ -343,7 +349,8 @@ void fe_core_commands_init(void)
 	signal_add("error command", (SIGNAL_FUNC) event_cmderror);
 	signal_add("list subcommands", (SIGNAL_FUNC) event_list_subcommands);
 
-	command_set_options("echo", "current +level +window");
+	command_set_options("echo", "+level +window");
+	command_set_options("cat", "window");
 }
 
 void fe_core_commands_deinit(void)

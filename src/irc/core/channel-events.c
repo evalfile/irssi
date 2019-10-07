@@ -19,15 +19,15 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
-#include "channel-events.h"
-#include "channels-setup.h"
-#include "settings.h"
-#include "recode.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/irc/core/channel-events.h>
+#include <irssi/src/core/channels-setup.h>
+#include <irssi/src/core/settings.h>
+#include <irssi/src/core/recode.h>
 
-#include "irc-servers.h"
-#include "irc-channels.h"
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
 
 static void check_join_failure(IRC_SERVER_REC *server, const char *channel)
 {
@@ -336,11 +336,17 @@ static void event_kick(IRC_SERVER_REC *server, const char *data)
 
 static void event_invite(IRC_SERVER_REC *server, const char *data)
 {
-	char *params, *channel, *shortchan;
+	char *params, *nick, *channel, *shortchan;
 
 	g_return_if_fail(data != NULL);
 
-	params = event_get_params(data, 2, NULL, &channel);
+	params = event_get_params(data, 2, &nick, &channel);
+
+	if (server->nick_comp_func(nick, server->nick) != 0) {
+		/* someone else was invited, no need to do anything */
+		g_free(params);
+		return;
+	}
 
 	if (irc_channel_find(server, channel) == NULL) {
                 /* check if we're supposed to autojoin this channel */

@@ -19,10 +19,10 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "levels.h"
-#include "ignore.h"
-#include "servers.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/ignore.h>
+#include <irssi/src/core/servers.h>
 
 static void sig_message_public(SERVER_REC *server, const char *msg,
 			       const char *nick, const char *address,
@@ -43,6 +43,13 @@ static void sig_message_join(SERVER_REC *server, const char *channel,
 			     const char *nick, const char *address)
 {
 	if (ignore_check(server, nick, address, channel, NULL, MSGLEVEL_JOINS))
+		signal_stop();
+}
+
+static void sig_message_host_changed(SERVER_REC *server, const char *nick,
+				     const char *address, const char *old_address)
+{
+	if (ignore_check(server, nick, address, NULL, NULL, MSGLEVEL_JOINS))
 		signal_stop();
 }
 
@@ -98,6 +105,14 @@ static void sig_message_invite(SERVER_REC *server, const char *channel,
 		signal_stop();
 }
 
+static void sig_message_invite_other(SERVER_REC *server, const char *channel,
+			      const char *invited, const char *nick, const char *address)
+{
+	if (ignore_check(server, nick, address,
+			 channel, invited, MSGLEVEL_INVITES))
+		signal_stop();
+}
+
 static void sig_message_topic(SERVER_REC *server, const char *channel,
 			      const char *topic,
 			      const char *nick, const char *address)
@@ -112,12 +127,14 @@ void fe_ignore_messages_init(void)
 	signal_add_first("message public", (SIGNAL_FUNC) sig_message_public);
 	signal_add_first("message private", (SIGNAL_FUNC) sig_message_private);
 	signal_add_first("message join", (SIGNAL_FUNC) sig_message_join);
+	signal_add_first("message host_changed", (SIGNAL_FUNC) sig_message_host_changed);
 	signal_add_first("message part", (SIGNAL_FUNC) sig_message_part);
 	signal_add_first("message quit", (SIGNAL_FUNC) sig_message_quit);
 	signal_add_first("message kick", (SIGNAL_FUNC) sig_message_kick);
 	signal_add_first("message nick", (SIGNAL_FUNC) sig_message_nick);
 	signal_add_first("message own_nick", (SIGNAL_FUNC) sig_message_own_nick);
 	signal_add_first("message invite", (SIGNAL_FUNC) sig_message_invite);
+	signal_add_first("message invite_other", (SIGNAL_FUNC) sig_message_invite_other);
 	signal_add_first("message topic", (SIGNAL_FUNC) sig_message_topic);
 }
 
@@ -126,11 +143,13 @@ void fe_ignore_messages_deinit(void)
 	signal_remove("message public", (SIGNAL_FUNC) sig_message_public);
 	signal_remove("message private", (SIGNAL_FUNC) sig_message_private);
 	signal_remove("message join", (SIGNAL_FUNC) sig_message_join);
+	signal_remove("message host_changed", (SIGNAL_FUNC) sig_message_host_changed);
 	signal_remove("message part", (SIGNAL_FUNC) sig_message_part);
 	signal_remove("message quit", (SIGNAL_FUNC) sig_message_quit);
 	signal_remove("message kick", (SIGNAL_FUNC) sig_message_kick);
 	signal_remove("message nick", (SIGNAL_FUNC) sig_message_nick);
 	signal_remove("message own_nick", (SIGNAL_FUNC) sig_message_own_nick);
 	signal_remove("message invite", (SIGNAL_FUNC) sig_message_invite);
+	signal_remove("message invite_other", (SIGNAL_FUNC) sig_message_invite_other);
 	signal_remove("message topic", (SIGNAL_FUNC) sig_message_topic);
 }

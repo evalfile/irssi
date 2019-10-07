@@ -18,11 +18,11 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
 
-#include "irc-cap.h"
-#include "irc-servers.h"
+#include <irssi/src/irc/core/irc-cap.h>
+#include <irssi/src/irc/core/irc-servers.h>
 
 int irc_cap_toggle (IRC_SERVER_REC *server, char *cap, int enable)
 {
@@ -131,6 +131,7 @@ static void event_cap (IRC_SERVER_REC *server, char *args, char *nick, char *add
 	/* Malformed request, terminate the negotiation */
 	else {
 		irc_cap_finish_negotiation(server);
+		g_free(params);
 		g_warn_if_reached();
 		return;
 	}
@@ -169,7 +170,7 @@ static void event_cap (IRC_SERVER_REC *server, char *args, char *nick, char *add
 				 * duplicated values, let's just warn the user */
 				g_warning("The server sent the %s capability twice", key);
 			}
-			g_hash_table_insert(server->cap_supported, key, val);
+			g_hash_table_replace(server->cap_supported, key, val);
 		}
 
 		/* A multiline response is always terminated by a normal one,
@@ -183,6 +184,9 @@ static void event_cap (IRC_SERVER_REC *server, char *args, char *nick, char *add
 				cmd = g_string_new("CAP REQ :");
 
 				avail_caps = 0;
+
+				/* To process the queue in order, we need to reverse the stack once */
+				server->cap_queue = g_slist_reverse(server->cap_queue);
 
 				/* Check whether the cap is supported by the server */
 				for (tmp = server->cap_queue; tmp != NULL; tmp = tmp->next) {
@@ -252,7 +256,7 @@ static void event_cap (IRC_SERVER_REC *server, char *args, char *nick, char *add
 				continue;
 			}
 
-			g_hash_table_insert(server->cap_supported, key, val);
+			g_hash_table_replace(server->cap_supported, key, val);
 			cap_emit_signal(server, "new", key);
 		}
 	}

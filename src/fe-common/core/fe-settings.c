@@ -19,17 +19,17 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "signals.h"
-#include "commands.h"
-#include "servers.h"
-#include "misc.h"
-#include "lib-config/iconfig.h"
-#include "settings.h"
-#include "fe-settings.h"
-#include "levels.h"
-#include "printtext.h"
-#include "keyboard.h"
+#include <irssi/src/fe-common/core/module-formats.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/lib-config/iconfig.h>
+#include <irssi/src/core/settings.h>
+#include <irssi/src/fe-common/core/fe-settings.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/fe-common/core/keyboard.h>
 
 static void set_print(SETTINGS_REC *rec)
 {
@@ -65,6 +65,29 @@ static void set_print_pattern(const char *pattern)
 			last_section = rec->section;
 		}
 		set_print(rec);
+	}
+	g_slist_free(sets);
+}
+
+static void set_print_section(const char *pattern)
+{
+	GSList *sets, *tmp;
+	const char *last_section;
+
+	last_section = "";
+	sets = settings_get_sorted();
+	for (tmp = sets; tmp != NULL; tmp = tmp->next) {
+		SETTINGS_REC *rec = tmp->data;
+
+		if (stristr(rec->section, pattern) != NULL) {
+			if (g_strcmp0(last_section, rec->section) != 0) {
+				/* print section */
+				printformat(NULL, NULL, MSGLEVEL_CLIENTCRAP,
+						TXT_SET_TITLE, rec->section);
+				last_section = rec->section;
+			}
+			set_print(rec);
+		}
 	}
 	g_slist_free(sets);
 }
@@ -123,13 +146,13 @@ static void set_choice(const char *key, const char *value)
 	g_free(stripped_value);
 }
 
-/* SYNTAX: SET [-clear | -default] [<key> [<value>]] */
+/* SYNTAX: SET [-clear | -default | -section] [<key> [<value>]] */
 static void cmd_set(char *data)
 {
         GHashTable *optlist;
 	char *key, *value;
 	void *free_arg;
-	int clear, set_default;
+	int clear, set_default, list_section;
 	SETTINGS_REC *rec;
 
 	if (!cmd_get_params(data, &free_arg, 2 | PARAM_FLAG_GETREST |
@@ -139,11 +162,14 @@ static void cmd_set(char *data)
 
 	clear = g_hash_table_lookup(optlist, "clear") != NULL;
 	set_default = g_hash_table_lookup(optlist, "default") != NULL;
+	list_section = g_hash_table_lookup(optlist, "section") != NULL;
 
 	if (*key == '\0')
-		clear = set_default = FALSE;
+		clear = set_default = list_section = FALSE;
 
-	if (!(clear || set_default || *value != '\0'))
+	if (list_section)
+		set_print_section(key);
+	else if (!(clear || set_default || *value != '\0'))
 		set_print_pattern(key);
 	else {
 		rec = settings_get_record(key);
@@ -408,7 +434,7 @@ void fe_settings_init(void)
 	command_bind("unalias", NULL, (SIGNAL_FUNC) cmd_unalias);
 	command_bind("reload", NULL, (SIGNAL_FUNC) cmd_reload);
 	command_bind("save", NULL, (SIGNAL_FUNC) cmd_save);
-	command_set_options("set", "clear default");
+	command_set_options("set", "clear default section");
 
         signal_add("settings errors", (SIGNAL_FUNC) sig_settings_errors);
 }

@@ -19,18 +19,18 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "modules.h"
-#include "signals.h"
-#include "commands.h"
-#include "settings.h"
+#include <irssi/src/fe-common/core/module-formats.h>
+#include <irssi/src/core/modules.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/settings.h>
 
-#include "levels.h"
-#include "servers.h"
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/servers.h>
 
-#include "themes.h"
-#include "fe-windows.h"
-#include "printtext.h"
+#include <irssi/src/fe-common/core/themes.h>
+#include <irssi/src/fe-common/core/fe-windows.h>
+#include <irssi/src/fe-common/core/printtext.h>
 
 static int beep_msg_level, beep_when_away, beep_when_window_active;
 
@@ -38,6 +38,7 @@ static int signal_gui_print_text_finished;
 static int signal_print_starting;
 static int signal_print_text;
 static int signal_print_format;
+static int signal_print_noformat;
 
 static int sending_print_starting;
 
@@ -313,6 +314,8 @@ static void printtext_dest_args(TEXT_DEST_REC *dest, const char *text, va_list v
 	}
 
 	str = printtext_get_args(dest, text, va);
+	signal_emit_id(signal_print_noformat, 2,
+		       dest, str);
 	print_line(dest, str);
 	g_free(str);
 }
@@ -447,7 +450,7 @@ static void sig_print_text(TEXT_DEST_REC *dest, const char *text)
 	if (dest->window == NULL) {
                 str = strip_codes(text);
 #ifndef SUPPRESS_PRINTF_FALLBACK
-		printf("NO WINDOWS: %s\n", str);
+		printf("## NO WINDOWS: %s\n", str);
 #endif
                 g_free(str);
                 return;
@@ -515,6 +518,7 @@ void printtext_init(void)
 	signal_print_starting = signal_get_uniq_id("print starting");
 	signal_print_text = signal_get_uniq_id("print text");
 	signal_print_format = signal_get_uniq_id("print format");
+	signal_print_noformat = signal_get_uniq_id("print noformat");
 
 	read_settings();
 	signal_add("print text", (SIGNAL_FUNC) sig_print_text);

@@ -19,20 +19,20 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "commands.h"
-#include "network.h"
-#include "levels.h"
-#include "settings.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/network.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/settings.h>
 
-#include "dcc-chat.h"
-#include "dcc-file.h"
-#include "dcc-get.h"
-#include "dcc-send.h"
+#include <irssi/src/irc/dcc/dcc-chat.h>
+#include <irssi/src/irc/dcc/dcc-file.h>
+#include <irssi/src/irc/dcc/dcc-get.h>
+#include <irssi/src/irc/dcc/dcc-send.h>
 
-#include "module-formats.h"
-#include "printtext.h"
-#include "themes.h"
+#include <irssi/src/fe-common/irc/dcc/module-formats.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/fe-common/core/themes.h>
 
 void fe_dcc_chat_init(void);
 void fe_dcc_chat_deinit(void);
@@ -191,3 +191,5 @@ void fe_irc_dcc_deinit(void)
 	command_unbind("dcc", (SIGNAL_FUNC) cmd_dcc);
 	command_unbind("dcc list", (SIGNAL_FUNC) cmd_dcc_list);
 }
+
+MODULE_ABICHECK(fe_irc_dcc)

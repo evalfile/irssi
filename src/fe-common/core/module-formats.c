@@ -19,7 +19,7 @@
 */
 
 #include "module.h"
-#include "formats.h"
+#include <irssi/src/fe-common/core/formats.h>
 
 FORMAT_REC fecommon_core_formats[] = {
 	{ MODULE_NAME, "Core", 0 },
@@ -94,17 +94,25 @@ FORMAT_REC fecommon_core_formats[] = {
 	/* ---- */
 	{ NULL, "Channels", 0 },
 
-	{ "join", "{channick_hilight $0} {chanhost_hilight $1} has joined {channel $2}", 3, { 0, 0, 0 } },
+	{ "join", "{channick_hilight $0} {chanhost_hilight $1} has joined {channel $2}", 5, { 0, 0, 0, 0, 0 } },
+	{ "join_extended", "{channick_hilight $0} {chanhost_hilight $1} has joined {channel $2} {comment realname {reason $4}}", 5, { 0, 0, 0, 0, 0 } },
+	{ "join_extended_account", "{channick_hilight $0} {chanhost_hilight $1} has joined {channel $2} {reason account {hilight $3}} {comment realname {reason $4}}", 5, { 0, 0, 0, 0, 0 } },
+	{ "host_changed", "{channick_hilight $0} {chanhost_hilight $1} has changed host", 4, { 0, 0, 0, 0 } },
+	{ "logged_out", "{channick $0} {chanhost $1} has logged out of their account", 4, { 0, 0, 0, 0 } },
+	{ "logged_in", "{channick_hilight $0} {chanhost_hilight $1} has logged in to account {hilight $2}", 4, { 0, 0, 0, 0 } },
 	{ "part", "{channick $0} {chanhost $1} has left {channel $2} {reason $3}", 4, { 0, 0, 0, 0 } },
 	{ "kick", "{channick $0} was kicked from {channel $1} by {nick $2} {reason $3}", 5, { 0, 0, 0, 0, 0 } },
 	{ "quit", "{channick $0} {chanhost $1} has quit {reason $2}", 4, { 0, 0, 0, 0 } },
 	{ "quit_once", "{channel $3} {channick $0} {chanhost $1} has quit {reason $2}", 4, { 0, 0, 0, 0 } },
 	{ "invite", "{nick $0} invites you to {channel $1}", 3, { 0, 0, 0 } },
 	{ "not_invited", "You have not been invited to a channel!", 0 },
+	{ "invite_other", "{nick $0} has been invited to {channel $2} by {channick_hilight $1}", 4, { 0, 0, 0, 0 } },
 	{ "new_topic", "{nick $0} changed the topic of {channel $1} to: $2", 4, { 0, 0, 0, 0 } },
 	{ "topic_unset", "Topic unset by {nick $0} on {channel $1}", 4, { 0, 0, 0, 0 } },
 	{ "your_nick_changed", "You're now known as {nick $1}", 4, { 0, 0, 0, 0 } },
 	{ "nick_changed", "{channick $0} is now known as {channick_hilight $1}", 4, { 0, 0, 0, 0 } },
+	{ "notify_away_channel", "{channick $0} {chanhost $1} is now away: {reason $2}", 4, { 0, 0, 0, 0 } },
+	{ "notify_unaway_channel", "{channick_hilight $0} {chanhost $1} is no longer away", 4, { 0, 0, 0, 0 } },
 	{ "talking_in", "You are now talking in {channel $0}", 1, { 0 } },
 	{ "not_in_channels", "You are not on any channels", 0 },
 	{ "current_channel", "Current channel {channel $0}", 1, { 0 } },

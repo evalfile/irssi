@@ -19,14 +19,14 @@
 */
 
 #include "module.h"
-#include "misc.h"
-#include "utf8.h"
-#include "formats.h"
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/utf8.h>
+#include <irssi/src/fe-common/core/formats.h>
 
-#include "gui-entry.h"
-#include "gui-printtext.h"
-#include "term.h"
-#include "recode.h"
+#include <irssi/src/fe-text/gui-entry.h>
+#include <irssi/src/fe-text/gui-printtext.h>
+#include <irssi/src/fe-text/term.h>
+#include <irssi/src/core/recode.h>
 
 #undef i_toupper
 #undef i_tolower
@@ -379,11 +379,19 @@ static void gui_entry_draw_from(GUI_ENTRY_REC *entry, int pos)
 		if (new_xpos > end_xpos)
 			break;
 
-		if (entry->hidden)
+		if (entry->hidden) {
                         g_string_append_c(str, ' ');
-		else if (unichar_isprint(c))
-			g_string_append_unichar(str, c);
-		else {
+		} else if (unichar_isprint(c)) {
+			if (entry->utf8) {
+				g_string_append_unichar(str, c);
+			} else if (term_type == TERM_TYPE_BIG5) {
+				if(c > 0xff)
+					g_string_append_c(str, (c >> 8) & 0xff);
+				g_string_append_c(str, c & 0xff);
+			} else {
+				g_string_append_c(str, c);
+			}
+		} else {
 			g_string_append_c(str, 4);
 			g_string_append_c(str, FORMAT_STYLE_REVERSE);
 			g_string_append_c(str, (c & 127)+'A'-1);

@@ -4,10 +4,6 @@ bin_PROGRAMS = theme-load-fuzz
 CCLD=$(CXX) $(CXXFLAGS)
 
 AM_CPPFLAGS = \
-	-I$(top_srcdir)/src \
-	-I$(top_srcdir)/src/core/ \
-	-I$(top_srcdir)/src/irc/core/ \
-	-I$(top_srcdir)/src/fe-common/core/ \
 	$(GLIB_CFLAGS)
 
 LDADD = \
@@ -26,6 +22,7 @@ LDADD = \
 	$(FUZZER_LIBS)
 
 theme_load_fuzz_SOURCES = \
+        ../../null-logger.c \
         theme-load.c \
 	$(top_srcdir)/src/fe-text/module-formats.c
 

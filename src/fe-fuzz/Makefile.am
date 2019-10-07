@@ -6,10 +6,6 @@ bin_PROGRAMS = irssi-fuzz server-fuzz
 CCLD=$(CXX) $(CXXFLAGS)
 
 AM_CPPFLAGS = \
-	-I$(top_srcdir)/src \
-	-I$(top_srcdir)/src/core/ \
-	-I$(top_srcdir)/src/irc/core/ \
-	-I$(top_srcdir)/src/fe-common/core/ \
 	$(GLIB_CFLAGS)
 
 irssi_fuzz_DEPENDENCIES = @COMMON_LIBS@
@@ -21,6 +17,7 @@ irssi_fuzz_LDADD = \
 
 irssi_fuzz_SOURCES = \
         irssi.c \
+        null-logger.c \
 	../fe-text/module-formats.c
 
 server_fuzz_DEPENDENCIES = @COMMON_LIBS@
@@ -32,7 +29,9 @@ server_fuzz_LDADD = \
 
 server_fuzz_SOURCES = \
 	server.c \
+        null-logger.c \
 	../fe-text/module-formats.c
 
 noinst_HEADERS = \
+        null-logger.h \
 	../fe-text/module-formats.h

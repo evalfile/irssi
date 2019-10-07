@@ -1,12 +1,12 @@
 #define PERL_NO_GET_CONTEXT
 #include "module.h"
-#include "irssi-version.h"
-#include "core.h"
-#include "utf8.h"
-#include "recode.h"
+#include <irssi/irssi-version.h>
+#include <irssi/src/core/core.h>
+#include <irssi/src/core/utf8.h>
+#include <irssi/src/core/recode.h>
 
-#include "pidwait.h"
-#include "session.h"
+#include <irssi/src/core/pidwait.h>
+#include <irssi/src/core/session.h>
 
 #define DEFAULT_COMMAND_CATEGORY "Perl scripts' commands"
 
@@ -303,6 +303,13 @@ CODE:
 	perl_source_remove(tag);
 
 # maybe there's some easier way than this..? :)
+int
+MSGLEVEL_HIDDEN()
+CODE:
+	RETVAL = MSGLEVEL_HIDDEN;
+OUTPUT:
+	RETVAL
+
 int
 MSGLEVEL_CRAP()
 CODE:

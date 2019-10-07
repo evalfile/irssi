@@ -18,16 +18,17 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "module.h"
-#include "modules-load.h"
-#include "levels.h"
-#include "../fe-text/module-formats.h" // need to explicitly grab from fe-text
-#include "themes.h"
-#include "core.h"
-#include "fe-common-core.h"
-#include "args.h"
-#include "printtext.h"
-#include "irc.h"
+#include <irssi/src/fe-text/module.h>
+#include <irssi/src/core/modules-load.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/fe-text/module-formats.h> // need to explicitly grab from fe-text
+#include <irssi/src/fe-common/core/themes.h>
+#include <irssi/src/core/core.h>
+#include <irssi/src/fe-common/core/fe-common-core.h>
+#include <irssi/src/core/args.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/irc/core/irc.h>
+#include <irssi/src/fe-fuzz/null-logger.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -35,6 +36,9 @@
 #include <string.h>
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	g_log_set_null_logger();
+#endif
 	core_register_options();
 	fe_common_core_register_options();
 	/* no args */
@@ -48,17 +52,21 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
-	if (size < 1) {
-		return 0;
-	}
 	uint8_t count = *data;
-	gchar *copy = g_strndup((const gchar *)data+1, size-1);
+	gchar *copy;
 
 	char *output0;
 	char *output1;
 	char *output2;
 	char *output3;
 	char *params;
+
+	if (size < 1) {
+		return 0;
+	}
+
+	copy = g_strndup((const gchar *)data+1, size-1);
+
 	if (count % 8 == 0) {
 		params = event_get_params(copy, 1 | PARAM_FLAG_GETREST, &output0);
 	} else if (count % 8 == 1) {

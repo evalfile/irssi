@@ -19,14 +19,14 @@
 */
 
 #include "module.h"
-#include "commands.h"
-#include "network.h"
-#include "signals.h"
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/network.h>
+#include <irssi/src/core/signals.h>
 
-#include "modes.h"
-#include "irc-servers.h"
+#include <irssi/src/irc/core/modes.h>
+#include <irssi/src/irc/core/irc-servers.h>
 
-#include "settings.h"
+#include <irssi/src/core/settings.h>
 
 static void sig_server_connect_copy(SERVER_CONNECT_REC **dest,
 				    IRC_SERVER_CONNECT_REC *src)
@@ -49,8 +49,8 @@ static void sig_server_connect_copy(SERVER_CONNECT_REC **dest,
 	rec->usermode = g_strdup(src->usermode);
 	rec->alternate_nick = g_strdup(src->alternate_nick);
 	rec->sasl_mechanism = src->sasl_mechanism;
-	rec->sasl_username = src->sasl_username;
-	rec->sasl_password = src->sasl_password;
+	rec->sasl_username = g_strdup(src->sasl_username);
+	rec->sasl_password = g_strdup(src->sasl_password);
 	*dest = (SERVER_CONNECT_REC *) rec;
 }
 

@@ -19,19 +19,19 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "commands.h"
-#include "recode.h"
-#include "network.h"
-#include "net-sendbuffer.h"
-#include "misc.h"
-#include "settings.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/recode.h>
+#include <irssi/src/core/network.h>
+#include <irssi/src/core/net-sendbuffer.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/settings.h>
 
-#include "irc-servers.h"
-#include "irc-queries.h"
-#include "masks.h"
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-queries.h>
+#include <irssi/src/core/masks.h>
 
-#include "dcc-chat.h"
+#include <irssi/src/irc/dcc/dcc-chat.h>
 
 static char *dcc_chat_get_new_id(const char *nick)
 {
@@ -361,7 +361,7 @@ static void dcc_chat_listen(CHAT_DCC_REC *dcc)
 	signal_emit("dcc connected", 1, dcc);
 }
 
-/* callback: DCC CHAT - net_connect_nonblock() finished */
+/* callback: DCC CHAT - connect finished */
 static void sig_chat_connected(CHAT_DCC_REC *dcc)
 {
 	g_return_if_fail(IS_DCC_CHAT(dcc));

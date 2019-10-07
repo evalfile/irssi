@@ -19,15 +19,15 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
-#include "settings.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/settings.h>
 
-#include "irc.h"
-#include "irc-servers.h"
-#include "servers-redirect.h"
+#include <irssi/src/irc/core/irc.h>
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/servers-redirect.h>
 
-#include "notifylist.h"
+#include <irssi/src/irc/notifylist/notifylist.h>
 
 #define DEFAULT_NOTIFY_CHECK_TIME "1min"
 #define DEFAULT_NOTIFY_WHOIS_TIME "5min"
@@ -131,7 +131,7 @@ static void notifylist_timeout_server(IRC_SERVER_REC *server)
 
 		len = strlen(nick);
 
-		if (cmd->len+len+1 > 510)
+		if (cmd->len+len+1 > server->max_message_len)
                         ison_send(server, cmd);
 
 		g_string_append_printf(cmd, "%s ", nick);

@@ -21,33 +21,34 @@
 #include "module.h"
 #include <signal.h>
 
-#include "args.h"
-#include "pidwait.h"
-#include "misc.h"
+#include <irssi/src/core/args.h>
+#include <irssi/src/core/pidwait.h>
+#include <irssi/src/core/misc.h>
 
-#include "net-disconnect.h"
-#include "signals.h"
-#include "settings.h"
-#include "session.h"
+#include <irssi/src/core/net-disconnect.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/settings.h>
+#include <irssi/src/core/session.h>
 #ifdef HAVE_CAPSICUM
-#include "capsicum.h"
+#include <irssi/src/core/capsicum.h>
 #endif
 
-#include "chat-protocols.h"
-#include "servers.h"
-#include "chatnets.h"
-#include "commands.h"
-#include "expandos.h"
-#include "write-buffer.h"
-#include "log.h"
-#include "rawlog.h"
-#include "ignore.h"
-#include "recode.h"
+#include <irssi/src/core/chat-protocols.h>
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/chatnets.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/expandos.h>
+#include <irssi/src/core/write-buffer.h>
+#include <irssi/src/core/log.h>
+#include <irssi/src/core/rawlog.h>
+#include <irssi/src/core/ignore.h>
+#include <irssi/src/core/recode.h>
+#include <irssi/src/core/refstrings.h>
 
-#include "channels.h"
-#include "queries.h"
-#include "nicklist.h"
-#include "nickmatch-cache.h"
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/queries.h>
+#include <irssi/src/core/nicklist.h>
+#include <irssi/src/core/nickmatch-cache.h>
 
 #ifdef HAVE_SYS_RESOURCE_H
 #  include <sys/resource.h>
@@ -261,6 +262,7 @@ void core_init(void)
 	nicklist_init();
 
 	chat_commands_init();
+	i_refstr_init();
 	wcwidth_wrapper_init();
 
 	settings_add_str("misc", "ignore_signals", "");
@@ -286,6 +288,7 @@ void core_deinit(void)
 	signal_remove("irssi init finished", (SIGNAL_FUNC) sig_irssi_init_finished);
 
 	wcwidth_wrapper_deinit();
+	i_refstr_deinit();
 	chat_commands_deinit();
 
 	nicklist_deinit();

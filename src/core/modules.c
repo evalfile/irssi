@@ -19,8 +19,8 @@
 */
 
 #include "module.h"
-#include "modules.h"
-#include "signals.h"
+#include <irssi/src/core/modules.h>
+#include <irssi/src/core/signals.h>
 
 GSList *modules;
 
@@ -247,14 +247,24 @@ MODULE_REC *module_find(const char *name)
 MODULE_FILE_REC *module_file_find(MODULE_REC *module, const char *name)
 {
 	GSList *tmp;
+	char *tmpname, *p;
+	tmpname = g_strdup(name);
+	for (p = tmpname; *p != '\0'; p++) {
+		if (*p == '_')
+			*p = '-';
+	}
 
 	for (tmp = module->files; tmp != NULL; tmp = tmp->next) {
 		MODULE_FILE_REC *rec = tmp->data;
 
-		if (g_strcmp0(rec->name, name) == 0)
+		if (g_strcmp0(rec->name, name) == 0 ||
+		    g_strcmp0(rec->name, tmpname) == 0) {
+			g_free(tmpname);
                         return rec;
+		}
 	}
 
+	g_free(tmpname);
         return NULL;
 }
 

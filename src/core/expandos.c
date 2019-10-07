@@ -18,20 +18,20 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "core.h"
+#include <irssi/src/core/core.h>
 #include "module.h"
-#include "modules.h"
-#include "signals.h"
-#include "expandos.h"
-#include "settings.h"
-#include "commands.h"
-#include "misc.h"
-#include "irssi-version.h"
+#include <irssi/src/core/modules.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/expandos.h>
+#include <irssi/src/core/settings.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/irssi-version.h>
 
-#include "servers.h"
-#include "channels.h"
-#include "queries.h"
-#include "window-item-def.h"
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/queries.h>
+#include <irssi/src/core/window-item-def.h>
 
 #ifdef HAVE_SYS_UTSNAME_H
 #  include <sys/utsname.h>
@@ -48,6 +48,7 @@ typedef struct {
 } EXPANDO_REC;
 
 const char *current_expando = NULL;
+time_t current_time = (time_t)-1;
 
 static int timer_tag;
 
@@ -441,7 +442,7 @@ static char *expando_time(SERVER_REC *server, void *item, int *free_ret)
 	struct tm *tm;
         char str[256];
 
-        now = time(NULL);
+        now = current_time != (time_t)-1 ? current_time : time(NULL);
 	tm = localtime(&now);
 
 	if (strftime(str, sizeof(str), timestamp_format, tm) == 0)

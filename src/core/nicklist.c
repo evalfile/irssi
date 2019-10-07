@@ -19,13 +19,13 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
 
-#include "servers.h"
-#include "channels.h"
-#include "nicklist.h"
-#include "masks.h"
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/nicklist.h>
+#include <irssi/src/core/masks.h>
 
 #define isalnumhigh(a) \
         (i_isalnum(a) || (unsigned char) (a) >= 128)
@@ -101,6 +101,14 @@ void nicklist_set_host(CHANNEL_REC *channel, NICK_REC *nick, const char *host)
         signal_emit("nicklist host changed", 2, channel, nick);
 }
 
+void nicklist_set_account(CHANNEL_REC *channel, NICK_REC *nick, const char *account)
+{
+	g_free(nick->account);
+	nick->account = g_strdup(account);
+
+	signal_emit("nicklist account changed", 2, channel, nick);
+}
+
 static void nicklist_destroy(CHANNEL_REC *channel, NICK_REC *nick)
 {
 	signal_emit("nicklist remove", 2, channel, nick);
@@ -112,6 +120,7 @@ static void nicklist_destroy(CHANNEL_REC *channel, NICK_REC *nick)
 	g_free(nick->nick);
 	g_free_not_null(nick->realname);
 	g_free_not_null(nick->host);
+	g_free(nick->account);
 	g_free(nick);
 }
 

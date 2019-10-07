@@ -19,29 +19,29 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "signals.h"
-#include "misc.h"
-#include "settings.h"
+#include <irssi/src/fe-common/irc/module-formats.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/settings.h>
 
-#include "levels.h"
-#include "servers.h"
-#include "servers-redirect.h"
-#include "servers-reconnect.h"
-#include "queries.h"
-#include "ignore.h"
-#include "recode.h"
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/servers.h>
+#include <irssi/src/irc/core/servers-redirect.h>
+#include <irssi/src/core/servers-reconnect.h>
+#include <irssi/src/core/queries.h>
+#include <irssi/src/core/ignore.h>
+#include <irssi/src/core/recode.h>
 
-#include "irc-servers.h"
-#include "irc-channels.h"
-#include "irc-nicklist.h"
-#include "irc-masks.h"
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
+#include <irssi/src/irc/core/irc-nicklist.h>
+#include <irssi/src/irc/core/irc-masks.h>
 
-#include "printtext.h"
-#include "fe-queries.h"
-#include "fe-windows.h"
-#include "fe-irc-server.h"
-#include "fe-irc-channels.h"
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/fe-common/core/fe-queries.h>
+#include <irssi/src/fe-common/core/fe-windows.h>
+#include <irssi/src/fe-common/irc/fe-irc-server.h>
+#include <irssi/src/fe-common/irc/fe-irc-channels.h>
 
 static void event_privmsg(IRC_SERVER_REC *server, const char *data,
 			  const char *nick, const char *addr)
@@ -113,16 +113,46 @@ static void event_notice(IRC_SERVER_REC *server, const char *data,
 static void event_join(IRC_SERVER_REC *server, const char *data,
 		       const char *nick, const char *addr)
 {
-	char *params, *channel, *tmp;
+	char *params, *channel, *tmp, *account, *realname;
 
 	g_return_if_fail(data != NULL);
 
-	params = event_get_params(data, 1, &channel);
+	params = event_get_params(data, 3, &channel, &account, &realname);
 	tmp = strchr(channel, 7); /* ^G does something weird.. */
 	if (tmp != NULL) *tmp = '\0';
 
-	signal_emit("message join", 4, server,
-		    get_visible_target(server, channel), nick, addr);
+	signal_emit("message join", 6, server,
+		    get_visible_target(server, channel), nick, addr, account, realname);
+	g_free(params);
+}
+
+static void event_chghost(IRC_SERVER_REC *server, const char *data,
+			  const char *nick, const char *addr)
+{
+	char *params, *user, *host, *new_addr;
+
+	g_return_if_fail(data != NULL);
+
+	params = event_get_params(data, 2, &user, &host);
+	new_addr = g_strconcat(user, "@", host, NULL);
+
+	signal_emit("message host_changed", 4, server, nick, new_addr, addr);
+
+	g_free(new_addr);
+	g_free(params);
+}
+
+static void event_account(IRC_SERVER_REC *server, const char *data,
+			  const char *nick, const char *addr)
+{
+	char *params, *account;
+
+	g_return_if_fail(data != NULL);
+
+	params = event_get_params(data, 1, &account);
+
+	signal_emit("message account_changed", 4, server, nick, addr, account);
+
 	g_free(params);
 }
 
@@ -237,6 +267,21 @@ static void event_mode(IRC_SERVER_REC *server, const char *data,
 	g_free(params);
 }
 
+static void event_away_notify(IRC_SERVER_REC *server, const char *data,
+			      const char *nick, const char *addr)
+{
+	char *params, *awaymsg;
+
+	g_return_if_fail(data != NULL);
+
+	params = event_get_params(data, 1 | PARAM_FLAG_GETREST,
+				  &awaymsg);
+
+	signal_emit("message away_notify", 4,
+		    server, nick, addr, awaymsg);
+	g_free(params);
+}
+
 static void event_pong(IRC_SERVER_REC *server, const char *data, const char *nick)
 {
 	char *params, *host, *reply;
@@ -252,13 +297,18 @@ static void event_pong(IRC_SERVER_REC *server, const char *data, const char *nic
 static void event_invite(IRC_SERVER_REC *server, const char *data,
 			 const char *nick, const char *addr)
 {
-	char *params, *channel;
+	char *params, *invited, *channel;
 
 	g_return_if_fail(data != NULL);
 
-	params = event_get_params(data, 2, NULL, &channel);
-	signal_emit("message invite", 4,
-		    server, get_visible_target(server, channel), nick, addr);
+	params = event_get_params(data, 2, &invited, &channel);
+	if (server->nick_comp_func(invited, server->nick) == 0) {
+		signal_emit("message invite", 4,
+			    server, get_visible_target(server, channel), nick, addr);
+	} else {
+		signal_emit("message invite_other", 5,
+			    server, get_visible_target(server, channel), invited, nick, addr);
+	}
 	g_free(params);
 }
 
@@ -441,6 +491,8 @@ void fe_events_init(void)
 	signal_add("ctcp action", (SIGNAL_FUNC) ctcp_action);
 	signal_add("event notice", (SIGNAL_FUNC) event_notice);
 	signal_add("event join", (SIGNAL_FUNC) event_join);
+	signal_add("event chghost", (SIGNAL_FUNC) event_chghost);
+	signal_add("event account", (SIGNAL_FUNC) event_account);
 	signal_add("event part", (SIGNAL_FUNC) event_part);
 	signal_add("event quit", (SIGNAL_FUNC) event_quit);
 	signal_add("event kick", (SIGNAL_FUNC) event_kick);
@@ -453,6 +505,7 @@ void fe_events_init(void)
 	signal_add("event error", (SIGNAL_FUNC) event_error);
 	signal_add("event wallops", (SIGNAL_FUNC) event_wallops);
 	signal_add("event silence", (SIGNAL_FUNC) event_silence);
+	signal_add("event away", (SIGNAL_FUNC) event_away_notify);
 
 	signal_add("default event", (SIGNAL_FUNC) event_received);
 
@@ -470,6 +523,8 @@ void fe_events_deinit(void)
 	signal_remove("ctcp action", (SIGNAL_FUNC) ctcp_action);
 	signal_remove("event notice", (SIGNAL_FUNC) event_notice);
 	signal_remove("event join", (SIGNAL_FUNC) event_join);
+	signal_remove("event chghost", (SIGNAL_FUNC) event_chghost);
+	signal_remove("event account", (SIGNAL_FUNC) event_account);
 	signal_remove("event part", (SIGNAL_FUNC) event_part);
 	signal_remove("event quit", (SIGNAL_FUNC) event_quit);
 	signal_remove("event kick", (SIGNAL_FUNC) event_kick);
@@ -482,6 +537,7 @@ void fe_events_deinit(void)
 	signal_remove("event error", (SIGNAL_FUNC) event_error);
 	signal_remove("event wallops", (SIGNAL_FUNC) event_wallops);
 	signal_remove("event silence", (SIGNAL_FUNC) event_silence);
+	signal_remove("event away", (SIGNAL_FUNC) event_away_notify);
 
 	signal_remove("default event", (SIGNAL_FUNC) event_received);
 

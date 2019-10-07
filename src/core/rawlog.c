@@ -19,19 +19,19 @@
 */
 
 #include "module.h"
-#include "rawlog.h"
-#include "log.h"
-#include "modules.h"
-#include "signals.h"
-#include "commands.h"
-#include "misc.h"
-#include "write-buffer.h"
-#include "settings.h"
+#include <irssi/src/core/rawlog.h>
+#include <irssi/src/core/log.h>
+#include <irssi/src/core/modules.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/write-buffer.h>
+#include <irssi/src/core/settings.h>
 #ifdef HAVE_CAPSICUM
-#include "capsicum.h"
+#include <irssi/src/core/capsicum.h>
 #endif
 
-#include "servers.h"
+#include <irssi/src/core/servers.h>
 
 static int rawlog_lines;
 static int signal_rawlog;
@@ -62,7 +62,7 @@ void rawlog_destroy(RAWLOG_REC *rawlog)
 /* NOTE! str must be dynamically allocated and must not be freed after! */
 static void rawlog_add(RAWLOG_REC *rawlog, char *str)
 {
-	if (rawlog->lines->length >= rawlog_lines && rawlog_lines > 0) {
+	while (rawlog->lines->length >= rawlog_lines && rawlog_lines > 0) {
 		void *tmp = g_queue_pop_head(rawlog->lines);
 		g_free(tmp);
 	}

@@ -19,22 +19,22 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "signals.h"
-#include "commands.h"
-#include "misc.h"
+#include <irssi/src/fe-common/irc/module-formats.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/misc.h>
 
-#include "servers-setup.h"
+#include <irssi/src/core/servers-setup.h>
 
-#include "levels.h"
-#include "irc-chatnets.h"
-#include "irc-servers.h"
-#include "irc-channels.h"
-#include "servers-reconnect.h"
-#include "irc-servers-setup.h"
+#include <irssi/src/core/levels.h>
+#include <irssi/src/irc/core/irc-chatnets.h>
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
+#include <irssi/src/core/servers-reconnect.h>
+#include <irssi/src/irc/core/irc-servers-setup.h>
 
-#include "fe-windows.h"
-#include "printtext.h"
+#include <irssi/src/fe-common/core/fe-windows.h>
+#include <irssi/src/fe-common/core/printtext.h>
 
 const char *get_visible_target(IRC_SERVER_REC *server, const char *target)
 {
@@ -51,9 +51,9 @@ const char *get_visible_target(IRC_SERVER_REC *server, const char *target)
 	return target;
 }
 
-/* SYNTAX: SERVER ADD|MODIFY [-4 | -6] [-ssl] [-ssl_cert <cert>] [-ssl_pkey <pkey>] [-ssl_pass <password>]
-                             [-ssl_verify] [-ssl_cafile <cafile>] [-ssl_capath <capath>]
-                             [-ssl_ciphers <list>]
+/* SYNTAX: SERVER ADD|MODIFY [-4 | -6] [-tls] [-tls_cert <cert>] [-tls_pkey <pkey>] [-tls_pass <password>]
+                             [-tls_verify] [-tls_cafile <cafile>] [-tls_capath <capath>]
+                             [-tls_ciphers <list>]
                              [-auto | -noauto] [-network <network>] [-host <hostname>]
                              [-cmdspeed <ms>] [-cmdmax <count>] [-port <port>]
                              <address> [<port> [<password>]] */

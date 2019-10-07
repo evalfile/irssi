@@ -19,15 +19,15 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "commands.h"
-#include "network.h"
-#include "misc.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/network.h>
+#include <irssi/src/core/misc.h>
 
-#include "dcc-file.h"
-#include "dcc-get.h"
-#include "dcc-send.h"
-#include "dcc-chat.h"
+#include <irssi/src/irc/dcc/dcc-file.h>
+#include <irssi/src/irc/dcc/dcc-get.h>
+#include <irssi/src/irc/dcc/dcc-send.h>
+#include <irssi/src/irc/dcc/dcc-chat.h>
 
 static FILE_DCC_REC *dcc_resume_find(int type, const char *nick, int port)
 {
@@ -92,8 +92,10 @@ static int dcc_ctcp_resume_parse(int type, const char *data, const char *nick,
 	params = g_strsplit(data, " ", -1);
 	paramcount = g_strv_length(params);
 
-	if (paramcount < 3)
+	if (paramcount < 3) {
+		g_strfreev(params);
 		return 0;
+	}
 
 	fileparams = get_file_params_count_resume(params, paramcount);
 

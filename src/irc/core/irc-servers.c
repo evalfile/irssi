@@ -20,30 +20,30 @@
 
 #include "module.h"
 
-#include "net-sendbuffer.h"
-#include "signals.h"
-#include "rawlog.h"
-#include "misc.h"
+#include <irssi/src/core/net-sendbuffer.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/rawlog.h>
+#include <irssi/src/core/misc.h>
 
-#include "channels.h"
-#include "queries.h"
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/queries.h>
 
-#include "irc-nicklist.h"
-#include "irc-queries.h"
-#include "irc-servers-setup.h"
-#include "irc-servers.h"
-#include "irc-cap.h"
-#include "sasl.h"
+#include <irssi/src/irc/core/irc-nicklist.h>
+#include <irssi/src/irc/core/irc-queries.h>
+#include <irssi/src/irc/core/irc-servers-setup.h>
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-cap.h>
+#include <irssi/src/irc/core/sasl.h>
 
-#include "channels-setup.h"
-#include "channel-rejoin.h"
-#include "servers-idle.h"
-#include "servers-reconnect.h"
-#include "servers-redirect.h"
-#include "modes.h"
+#include <irssi/src/core/channels-setup.h>
+#include <irssi/src/irc/core/channel-rejoin.h>
+#include <irssi/src/irc/core/servers-idle.h>
+#include <irssi/src/core/servers-reconnect.h>
+#include <irssi/src/irc/core/servers-redirect.h>
+#include <irssi/src/irc/core/modes.h>
 
-#include "settings.h"
-#include "recode.h"
+#include <irssi/src/core/settings.h>
+#include <irssi/src/core/recode.h>
 
 #define DEFAULT_MAX_KICKS 1
 #define DEFAULT_MAX_MODES 3
@@ -54,12 +54,6 @@
 #define DEFAULT_CMD_QUEUE_SPEED "2200msec"
 #define DEFAULT_CMDS_MAX_AT_ONCE 5
 #define DEFAULT_MAX_QUERY_CHANS 1 /* more and more IRC networks are using stupid ircds.. */
-
-/*
- * 63 is the maximum hostname length defined by the protocol.  10 is a common
- * username limit on many networks.  1 is for the `@'.
- */
-#define MAX_USERHOST_LEN (63 + 10 + 1)
 
 void irc_servers_reconnect_init(void);
 void irc_servers_reconnect_deinit(void);
@@ -208,7 +202,7 @@ static char **split_message(SERVER_REC *server, const char *target,
 
 	/* length calculation shamelessly stolen from splitlong_safe.pl */
 	return split_line(SERVER(server), msg, target,
-			  510 - strlen(":! PRIVMSG  :") -
+			  ircserver->max_message_len - strlen(":! PRIVMSG  :") -
 			  strlen(ircserver->nick) - MAX_USERHOST_LEN -
 			  strlen(target));
 }
@@ -235,12 +229,21 @@ static void server_init(IRC_SERVER_REC *server)
 		g_free(cmd);
 	}
 
-	if (conn->sasl_mechanism != SASL_MECHANISM_NONE)
-		irc_cap_toggle(server, "sasl", TRUE);
+	if (conn->sasl_mechanism != SASL_MECHANISM_NONE) {
+		irc_cap_toggle(server, CAP_SASL, TRUE);
+	}
 
-	irc_cap_toggle(server, "multi-prefix", TRUE);
+	irc_cap_toggle(server, CAP_MAXLINE, TRUE);
+	irc_cap_toggle(server, CAP_MULTI_PREFIX, TRUE);
+	irc_cap_toggle(server, CAP_EXTENDED_JOIN, TRUE);
+	irc_cap_toggle(server, CAP_SETNAME, TRUE);
+	irc_cap_toggle(server, CAP_INVITE_NOTIFY, TRUE);
+	irc_cap_toggle(server, CAP_AWAY_NOTIFY, TRUE);
+	irc_cap_toggle(server, CAP_CHGHOST, TRUE);
+	irc_cap_toggle(server, CAP_ACCOUNT_NOTIFY, TRUE);
+	irc_cap_toggle(server, CAP_SELF_MESSAGE, TRUE);
 
-	irc_send_cmd_now(server, "CAP LS");
+	irc_send_cmd_now(server, "CAP LS " CAP_LS_VERSION);
 
 	if (conn->password != NULL && *conn->password != '\0') {
                 /* send password */
@@ -315,6 +318,8 @@ SERVER_REC *irc_server_init_connect(SERVER_CONNECT_REC *conn)
 		server->connrec->port =
 			server->connrec->use_tls ? 6697 : 6667;
 	}
+
+	server->max_message_len = MAX_IRC_MESSAGE_LEN;
 
 	server->cmd_queue_speed = ircconn->cmd_queue_speed > 0 ?
 		ircconn->cmd_queue_speed : settings_get_time("cmd_queue_speed");
@@ -451,7 +456,11 @@ static void sig_destroyed(IRC_SERVER_REC *server)
 	gslist_free_full(server->cap_queue, (GDestroyNotify) g_free);
 	server->cap_queue = NULL;
 
-	g_free_and_null(server->sasl_buffer);
+	/* was g_free_and_null, but can't use on a GString */
+	if (server->sasl_buffer != NULL) {
+		g_string_free(server->sasl_buffer, TRUE);
+		server->sasl_buffer = NULL;
+	}
 
 	/* these are dynamically allocated only if isupport was sent */
 	g_hash_table_foreach(server->isupport,
@@ -481,6 +490,24 @@ static void sig_server_quit(IRC_SERVER_REC *server, const char *msg)
 	g_free(recoded);
 }
 
+static void cap_maxline(IRC_SERVER_REC *server)
+{
+	unsigned int maxline = 0;
+	gboolean parse_successful = FALSE;
+	const char *maxline_str;
+
+	maxline_str = g_hash_table_lookup(server->cap_supported, CAP_MAXLINE);
+	if (maxline_str != NULL) {
+		parse_successful = parse_uint(maxline_str, NULL, 10, &maxline);
+
+	}
+
+	if (parse_successful &&
+	    maxline >= MAX_IRC_MESSAGE_LEN + 2 /* 2 bytes for CR+LF */) {
+		server->max_message_len = maxline - 2;
+	}
+}
+
 void irc_server_send_action(IRC_SERVER_REC *server, const char *target, const char *data)
 {
 	char *recoded;
@@ -498,7 +525,7 @@ char **irc_server_split_action(IRC_SERVER_REC *server, const char *target,
 	g_return_val_if_fail(data != NULL, NULL);
 
 	return split_line(SERVER(server), data, target,
-			  510 - strlen(":! PRIVMSG  :\001ACTION \001") -
+			  server->max_message_len - strlen(":! PRIVMSG  :\001ACTION \001") -
 			  strlen(server->nick) - MAX_USERHOST_LEN -
 			  strlen(target));
 }
@@ -1035,6 +1062,7 @@ void irc_servers_init(void)
 	signal_add_first("server connected", (SIGNAL_FUNC) sig_connected);
 	signal_add_last("server destroyed", (SIGNAL_FUNC) sig_destroyed);
 	signal_add_last("server quit", (SIGNAL_FUNC) sig_server_quit);
+	signal_add("server cap ack " CAP_MAXLINE, (SIGNAL_FUNC) cap_maxline);
 	signal_add("event 001", (SIGNAL_FUNC) event_connected);
 	signal_add("event 004", (SIGNAL_FUNC) event_server_info);
 	signal_add("event 005", (SIGNAL_FUNC) event_isupport);
@@ -1062,6 +1090,7 @@ void irc_servers_deinit(void)
 	signal_remove("server connected", (SIGNAL_FUNC) sig_connected);
 	signal_remove("server destroyed", (SIGNAL_FUNC) sig_destroyed);
         signal_remove("server quit", (SIGNAL_FUNC) sig_server_quit);
+	signal_remove("server cap ack " CAP_MAXLINE, (SIGNAL_FUNC) cap_maxline);
 	signal_remove("event 001", (SIGNAL_FUNC) event_connected);
 	signal_remove("event 004", (SIGNAL_FUNC) event_server_info);
 	signal_remove("event 005", (SIGNAL_FUNC) event_isupport);

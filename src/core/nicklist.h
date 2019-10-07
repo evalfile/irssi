@@ -1,5 +1,5 @@
-#ifndef __NICKLIST_H
-#define __NICKLIST_H
+#ifndef IRSSI_CORE_NICKLIST_H
+#define IRSSI_CORE_NICKLIST_H
 
 /* Returns NICK_REC if it's nick, NULL if it isn't. */
 #define NICK(server) \
@@ -11,13 +11,14 @@
 #define	MAX_USER_PREFIXES 7 /* Max prefixes kept for any user-in-chan. 7+1 is a memory unit */
 
 struct _NICK_REC {
-#include "nick-rec.h"
+#include <irssi/src/core/nick-rec.h>
 };
 
 /* Add new nick to list */
 void nicklist_insert(CHANNEL_REC *channel, NICK_REC *nick);
 /* Set host address for nick */
 void nicklist_set_host(CHANNEL_REC *channel, NICK_REC *nick, const char *host);
+void nicklist_set_account(CHANNEL_REC *channel, NICK_REC *nick, const char *account);
 /* Remove nick from list */
 void nicklist_remove(CHANNEL_REC *channel, NICK_REC *nick);
 /* Change nick */

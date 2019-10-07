@@ -19,23 +19,23 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "signals.h"
-#include "commands.h"
-#include "levels.h"
-#include "misc.h"
-#include "special-vars.h"
-#include "settings.h"
+#include <irssi/src/fe-common/core/module-formats.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/commands.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/special-vars.h>
+#include <irssi/src/core/settings.h>
 
-#include "servers.h"
-#include "channels.h"
-#include "nicklist.h"
-#include "ignore.h"
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/nicklist.h>
+#include <irssi/src/core/ignore.h>
 
-#include "window-items.h"
-#include "fe-queries.h"
-#include "hilight-text.h"
-#include "printtext.h"
+#include <irssi/src/fe-common/core/window-items.h>
+#include <irssi/src/fe-common/core/fe-queries.h>
+#include <irssi/src/fe-common/core/hilight-text.h>
+#include <irssi/src/fe-common/core/printtext.h>
 
 #define ishighalnum(c) ((unsigned char) (c) >= 128 || i_isalnum(c))
 #define isnickchar(a) \
@@ -349,14 +349,24 @@ static void sig_message_own_private(SERVER_REC *server, const char *msg,
 }
 
 static void sig_message_join(SERVER_REC *server, const char *channel,
-			     const char *nick, const char *address)
+			     const char *nick, const char *address,
+			     const char *account, const char *realname)
 {
 	int level = MSGLEVEL_JOINS;
 
 	ignore_check_plus(server, nick, address, channel, NULL, &level, FALSE);
 
-	printformat(server, channel, level,
-		    TXT_JOIN, nick, address, channel);
+	if (settings_get_bool("show_extended_join")) {
+		int txt;
+		if (*account == '\0') txt = TXT_JOIN;
+		else if (g_strcmp0("*", account) == 0) txt = TXT_JOIN_EXTENDED;
+		else txt = TXT_JOIN_EXTENDED_ACCOUNT;
+		printformat(server, channel, level,
+			    txt, nick, address, channel, account, realname);
+	} else {
+		printformat(server, channel, level,
+			    TXT_JOIN, nick, address, channel, account, realname);
+	}
 }
 
 static void sig_message_part(SERVER_REC *server, const char *channel,
@@ -371,50 +381,57 @@ static void sig_message_part(SERVER_REC *server, const char *channel,
 		    TXT_PART, nick, address, channel, reason);
 }
 
-static void sig_message_quit(SERVER_REC *server, const char *nick,
-			     const char *address, const char *reason)
+static void spread_server_message_to_windows(SERVER_REC *server, gboolean once,
+					     gboolean in_query,
+					     int base_level,
+					     int txt, int txt_once,
+					     const char *nick, const char *address,
+					     const char *data,
+					     const char *ignore_data
+					    )
 {
 	WINDOW_REC *window;
 	GString *chans;
 	GSList *tmp, *windows;
 	char *print_channel;
-	int once, count, level = MSGLEVEL_QUITS;
+	int count, level = base_level;
 
-	if (ignore_check_plus(server, nick, address, NULL, reason, &level, TRUE))
+	if (ignore_check_plus(server, nick, address, NULL, ignore_data, &level, TRUE))
 		return;
 
 	print_channel = NULL;
-	once = settings_get_bool("show_quit_once");
 
 	count = 0; windows = NULL;
 	chans = g_string_new(NULL);
 	for (tmp = server->channels; tmp != NULL; tmp = tmp->next) {
 		CHANNEL_REC *rec;
-		level = MSGLEVEL_QUITS;
+		level = base_level;
 		rec = tmp->data;
 
-		if (!nicklist_find(rec, nick))
+		if (!nicklist_find(rec, nick)) {
 			continue;
+		}
 
 		if (ignore_check_plus(server, nick, address, rec->visible_name,
-				      reason, &level, TRUE)) {
+				      ignore_data, &level, TRUE)) {
 			count++;
 			continue;
 		}
 
 		if (print_channel == NULL ||
-		    active_win->active == (WI_ITEM_REC *) rec)
+		    active_win->active == (WI_ITEM_REC *) rec) {
 			print_channel = rec->visible_name;
+		}
 
-		if (once)
+		if (once) {
 			g_string_append_printf(chans, "%s,", rec->visible_name);
-		else {
+		} else {
 			window = window_item_window((WI_ITEM_REC *) rec);
 			if (g_slist_find(windows, window) == NULL) {
-				windows = g_slist_append(windows, window);
+				windows = g_slist_prepend(windows, window);
 				printformat(server, rec->visible_name,
 					    level,
-					    TXT_QUIT, nick, address, reason,
+					    txt, nick, address, data,
 					    rec->visible_name);
 			}
 		}
@@ -422,24 +439,76 @@ static void sig_message_quit(SERVER_REC *server, const char *nick,
 	}
 	g_slist_free(windows);
 
-	if (!once) {
+	if (!once && in_query) {
 		/* check if you had query with the nick and
-		   display the quit there too */
+		   display the change there too */
 		QUERY_REC *query = query_find(server, nick);
 		if (query != NULL) {
 			printformat(server, nick, level,
-				    TXT_QUIT, nick, address, reason, "");
+				    txt, nick, address, data, "");
 		}
 	}
 
 	if (once || count == 0) {
-		if (chans->len > 0)
+		if (chans->len > 0) {
 			g_string_truncate(chans, chans->len-1);
-		printformat(server, print_channel, MSGLEVEL_QUITS,
-			    count <= 1 ? TXT_QUIT : TXT_QUIT_ONCE,
-			    nick, address, reason, chans->str);
+		}
+		printformat(server, print_channel, base_level,
+			    count <= 1 ? txt : txt_once,
+			    nick, address, data, chans->str);
 	}
 	g_string_free(chans, TRUE);
+}
+
+static void sig_message_host_changed(SERVER_REC *server, const char *nick,
+				     const char *address, const char *old_address)
+{
+	spread_server_message_to_windows(
+		server,
+		settings_get_bool("show_quit_once"),
+		TRUE,
+		MSGLEVEL_JOINS,
+		TXT_HOST_CHANGED, TXT_HOST_CHANGED,
+		nick, address, old_address,
+		NULL
+	);
+}
+
+static void sig_message_account_changed(SERVER_REC *server, const char *nick,
+					const char *address, const char *account)
+{
+	gboolean logged_in;
+	int txt;
+
+	if (!settings_get_bool("show_account_notify"))
+		return;
+
+	logged_in = g_strcmp0("*", account) != 0;
+	txt = logged_in ? TXT_LOGGED_IN : TXT_LOGGED_OUT;
+
+	spread_server_message_to_windows(
+		server,
+		settings_get_bool("show_quit_once"),
+		TRUE,
+		MSGLEVEL_MODES,
+		txt, txt,
+		nick, address, account,
+		"account"
+	);
+}
+
+static void sig_message_quit(SERVER_REC *server, const char *nick,
+			     const char *address, const char *reason)
+{
+	spread_server_message_to_windows(
+		server,
+		settings_get_bool("show_quit_once"),
+		TRUE,
+		MSGLEVEL_QUITS,
+		TXT_QUIT, TXT_QUIT_ONCE,
+		nick, address, reason,
+		reason
+	);
 }
 
 static void sig_message_kick(SERVER_REC *server, const char *channel,
@@ -537,6 +606,20 @@ static void sig_message_invite(SERVER_REC *server, const char *channel,
 	g_free(str);
 }
 
+static void sig_message_invite_other(SERVER_REC *server, const char *channel,
+				     const char *invited, const char *nick, const char *address)
+{
+	char *str;
+	int level = MSGLEVEL_INVITES;
+
+	ignore_check_plus(server, nick, address, channel, invited, &level, FALSE);
+
+	str = show_lowascii(channel);
+	printformat(server, channel, level,
+		    TXT_INVITE_OTHER, invited, nick, str, address);
+	g_free(str);
+}
+
 static void sig_message_topic(SERVER_REC *server, const char *channel,
 			      const char *topic,
 			      const char *nick, const char *address)
@@ -548,6 +631,25 @@ static void sig_message_topic(SERVER_REC *server, const char *channel,
 	printformat(server, channel, level,
 		    *topic != '\0' ? TXT_NEW_TOPIC : TXT_TOPIC_UNSET,
 		    nick, channel, topic, address);
+}
+
+static void sig_message_away_notify(SERVER_REC *server, const char *nick,
+				    const char *addr, const char *awaymsg)
+{
+	int txt = *awaymsg == '\0' ? TXT_NOTIFY_UNAWAY_CHANNEL :
+		TXT_NOTIFY_AWAY_CHANNEL;
+
+	if (!settings_get_bool("away_notify_public"))
+		return;
+
+	spread_server_message_to_windows(server, FALSE,
+					 FALSE,
+					 MSGLEVEL_CRAP,
+					 txt, txt,
+					 nick, addr,
+					 awaymsg,
+					 awaymsg
+					);
 }
 
 static int printnick_exists(NICK_REC *first, NICK_REC *ignore,
@@ -693,19 +795,26 @@ void fe_messages_init(void)
 	settings_add_bool("lookandfeel", "print_active_channel", FALSE);
 	settings_add_bool("lookandfeel", "show_quit_once", FALSE);
 	settings_add_bool("lookandfeel", "show_own_nickchange_once", FALSE);
+	settings_add_bool("lookandfeel", "away_notify_public", FALSE);
+	settings_add_bool("lookandfeel", "show_extended_join", FALSE);
+	settings_add_bool("lookandfeel", "show_account_notify", FALSE);
 
 	signal_add_last("message public", (SIGNAL_FUNC) sig_message_public);
 	signal_add_last("message private", (SIGNAL_FUNC) sig_message_private);
 	signal_add_last("message own_public", (SIGNAL_FUNC) sig_message_own_public);
 	signal_add_last("message own_private", (SIGNAL_FUNC) sig_message_own_private);
 	signal_add_last("message join", (SIGNAL_FUNC) sig_message_join);
+	signal_add_last("message host_changed", (SIGNAL_FUNC) sig_message_host_changed);
+	signal_add_last("message account_changed", (SIGNAL_FUNC) sig_message_account_changed);
 	signal_add_last("message part", (SIGNAL_FUNC) sig_message_part);
 	signal_add_last("message quit", (SIGNAL_FUNC) sig_message_quit);
 	signal_add_last("message kick", (SIGNAL_FUNC) sig_message_kick);
 	signal_add_last("message nick", (SIGNAL_FUNC) sig_message_nick);
 	signal_add_last("message own_nick", (SIGNAL_FUNC) sig_message_own_nick);
 	signal_add_last("message invite", (SIGNAL_FUNC) sig_message_invite);
+	signal_add_last("message invite_other", (SIGNAL_FUNC) sig_message_invite_other);
 	signal_add_last("message topic", (SIGNAL_FUNC) sig_message_topic);
+	signal_add_last("message away_notify", (SIGNAL_FUNC) sig_message_away_notify);
 
 	signal_add("nicklist new", (SIGNAL_FUNC) sig_nicklist_new);
 	signal_add("nicklist remove", (SIGNAL_FUNC) sig_nicklist_remove);
@@ -724,13 +833,17 @@ void fe_messages_deinit(void)
 	signal_remove("message own_public", (SIGNAL_FUNC) sig_message_own_public);
 	signal_remove("message own_private", (SIGNAL_FUNC) sig_message_own_private);
 	signal_remove("message join", (SIGNAL_FUNC) sig_message_join);
+	signal_remove("message host_changed", (SIGNAL_FUNC) sig_message_host_changed);
+	signal_remove("message account_changed", (SIGNAL_FUNC) sig_message_account_changed);
 	signal_remove("message part", (SIGNAL_FUNC) sig_message_part);
 	signal_remove("message quit", (SIGNAL_FUNC) sig_message_quit);
 	signal_remove("message kick", (SIGNAL_FUNC) sig_message_kick);
 	signal_remove("message nick", (SIGNAL_FUNC) sig_message_nick);
 	signal_remove("message own_nick", (SIGNAL_FUNC) sig_message_own_nick);
+	signal_remove("message invite_other", (SIGNAL_FUNC) sig_message_invite_other);
 	signal_remove("message invite", (SIGNAL_FUNC) sig_message_invite);
 	signal_remove("message topic", (SIGNAL_FUNC) sig_message_topic);
+	signal_remove("message away_notify", (SIGNAL_FUNC) sig_message_away_notify);
 
 	signal_remove("nicklist new", (SIGNAL_FUNC) sig_nicklist_new);
 	signal_remove("nicklist remove", (SIGNAL_FUNC) sig_nicklist_remove);

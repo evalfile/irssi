@@ -24,15 +24,15 @@
 #include <gcrypt.h>
 #include <unistd.h>
 
-#include "common.h"
-#include "levels.h"
-#include "signals.h"
-#include "printtext.h"
-#include "statusbar-item.h"
+#include <irssi/src/common.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/signals.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/fe-text/statusbar-item.h>
 
-#include "irssi-otr.h"
-#include "otr-formats.h"
-#include "key.h"
+#include <irssi/src/otr/irssi-otr.h>
+#include <irssi/src/otr/otr-formats.h>
+#include <irssi/src/otr/key.h>
 
 static int otr_debug = 0;
 
@@ -621,8 +621,10 @@ static enum otr_msg_status enqueue_otr_fragment(const char *msg, struct otr_peer
 			opc->msg_size += msg_len + 1;
 		}
 
-		/* Copy msg to full message since we already have a part pending. */
-		strncpy(opc->full_msg + opc->msg_len, msg, msg_len);
+		/* Copy msg to full message since we already have a part pending. Note
+		 * that we do not copy `msg`'s trailing nul byte because we explicit
+		 * set opc->full_msg[opc->msg_len] to nul afterwards. */
+		memcpy(opc->full_msg + opc->msg_len, msg, msg_len);
 		opc->msg_len += msg_len;
 		opc->full_msg[opc->msg_len] = '\0';
 
@@ -664,7 +666,7 @@ static enum otr_msg_status enqueue_otr_fragment(const char *msg, struct otr_peer
 				return ret;
 			}
 			/* Copy full message with NULL terminated byte. */
-			strncpy(opc->full_msg, msg, msg_len);
+			memcpy(opc->full_msg, msg, msg_len);
 			opc->msg_len += msg_len;
 			opc->msg_size += ((msg_len * 2) + 1);
 			opc->full_msg[opc->msg_len] = '\0';

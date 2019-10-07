@@ -19,18 +19,18 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
-#include "levels.h"
-#include "channels-setup.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/channels-setup.h>
 
-#include "bans.h"
-#include "modes.h"
-#include "mode-lists.h"
-#include "irc-servers.h"
-#include "irc-channels.h"
-#include "irc-nicklist.h"
-#include "channel-rejoin.h"
+#include <irssi/src/irc/core/bans.h>
+#include <irssi/src/irc/core/modes.h>
+#include <irssi/src/irc/core/mode-lists.h>
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
+#include <irssi/src/irc/core/irc-nicklist.h>
+#include <irssi/src/irc/core/channel-rejoin.h>
 
 void channels_query_init(void);
 void channels_query_deinit(void);
@@ -142,7 +142,7 @@ static void irc_channels_join(IRC_SERVER_REC *server, const char *data,
 			/* don't try to send too long lines
 			   make sure it's not longer than 510
 			   so 510 - strlen("JOIN ") = 505 */
-			if (cmdlen < 505)
+			if (cmdlen < server->max_message_len - 5 /* strlen("JOIN ") */)
 				continue;
 		}
 		if (outchans->len > 0) {

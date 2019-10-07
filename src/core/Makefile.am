@@ -1,8 +1,6 @@
 noinst_LIBRARIES = libcore.a
 
 AM_CPPFLAGS = \
-	-I$(top_srcdir)/src \
-	-I$(top_srcdir)/src/core \
 	$(GLIB_CFLAGS) \
 	-DSYSCONFDIR=\""$(sysconfdir)"\" \
 	-DMODULEDIR=\""$(libdir)/irssi/modules"\"
@@ -43,6 +41,7 @@ libcore_a_SOURCES = \
 	queries.c \
 	rawlog.c \
 	recode.c \
+	refstrings.c \
 	servers.c \
 	servers-reconnect.c \
 	servers-setup.c \
@@ -104,6 +103,7 @@ pkginc_core_HEADERS = \
 	queries.h \
 	rawlog.h \
 	recode.h \
+	refstrings.h \
 	servers.h \
 	servers-reconnect.h \
 	servers-setup.h \

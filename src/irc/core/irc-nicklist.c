@@ -19,15 +19,15 @@
 */
 
 #include "module.h"
-#include "signals.h"
-#include "misc.h"
+#include <irssi/src/core/signals.h>
+#include <irssi/src/core/misc.h>
 
-#include "irc-servers.h"
-#include "irc-channels.h"
-#include "irc-masks.h"
-#include "irc-nicklist.h"
-#include "modes.h"
-#include "servers.h"
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
+#include <irssi/src/irc/core/irc-masks.h>
+#include <irssi/src/irc/core/irc-nicklist.h>
+#include <irssi/src/irc/core/modes.h>
+#include <irssi/src/core/servers.h>
 
 /* Add new nick to list */
 NICK_REC *irc_nicklist_insert(IRC_CHANNEL_REC *channel, const char *nick,
@@ -446,6 +446,43 @@ static void event_userhost(SERVER_REC *server, const char *data)
 	g_free(params);
 }
 
+static void event_setname(SERVER_REC *server, const char *data, const char *nick, const char *address)
+{
+	GSList *nicks, *tmp;
+	NICK_REC *rec;
+
+	if (!IS_IRC_SERVER(server))
+		return;
+
+	g_return_if_fail(nick != NULL);
+	g_return_if_fail(data != NULL);
+	if (*data == ':') data++;
+
+	nicks = nicklist_get_same(server, nick);
+	for (tmp = nicks; tmp != NULL; tmp = tmp->next->next) {
+		rec = tmp->next->data;
+
+		g_free(rec->realname);
+		rec->realname = g_strdup(data);
+	}
+	g_slist_free(nicks);
+}
+
+static void event_away_notify(IRC_SERVER_REC *server, const char *data, const char *nick, const char *add)
+{
+	char *params, *awaymsg;
+
+	if (!IS_IRC_SERVER(server))
+		return;
+
+	g_return_if_fail(nick != NULL);
+	g_return_if_fail(data != NULL);
+
+	params = event_get_params(data, 1 | PARAM_FLAG_GETREST, &awaymsg);
+	nicklist_update_flags(SERVER(server), nick, *awaymsg != '\0', -1);
+	g_free(params);
+}
+
 static void sig_usermode(SERVER_REC *server)
 {
 	g_return_if_fail(IS_SERVER(server));
@@ -486,7 +523,9 @@ void irc_nicklist_init(void)
 	signal_add_first("event 433", (SIGNAL_FUNC) event_nick_in_use);
 	signal_add_first("event 437", (SIGNAL_FUNC) event_target_unavailable);
 	signal_add_first("event 302", (SIGNAL_FUNC) event_userhost);
+	signal_add_first("event away", (SIGNAL_FUNC) event_away_notify);
 	signal_add("userhost event", (SIGNAL_FUNC) event_userhost);
+	signal_add("event setname", (SIGNAL_FUNC) event_setname);
 	signal_add("user mode changed", (SIGNAL_FUNC) sig_usermode);
 	signal_add("server connected", (SIGNAL_FUNC) sig_connected);
 }
@@ -508,7 +547,9 @@ void irc_nicklist_deinit(void)
 	signal_remove("event 433", (SIGNAL_FUNC) event_nick_in_use);
 	signal_remove("event 437", (SIGNAL_FUNC) event_target_unavailable);
 	signal_remove("event 302", (SIGNAL_FUNC) event_userhost);
+	signal_remove("event away", (SIGNAL_FUNC) event_away_notify);
 	signal_remove("userhost event", (SIGNAL_FUNC) event_userhost);
+	signal_remove("event setname", (SIGNAL_FUNC) event_setname);
 	signal_remove("user mode changed", (SIGNAL_FUNC) sig_usermode);
 	signal_remove("server connected", (SIGNAL_FUNC) sig_connected);
 }

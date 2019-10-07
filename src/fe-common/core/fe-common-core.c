@@ -19,35 +19,35 @@
 */
 
 #include "module.h"
-#include "module-formats.h"
-#include "args.h"
-#include "misc.h"
-#include "levels.h"
-#include "settings.h"
+#include <irssi/src/fe-common/core/module-formats.h>
+#include <irssi/src/core/args.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/core/settings.h>
 
-#include "servers.h"
-#include "channels.h"
-#include "servers-setup.h"
+#include <irssi/src/core/servers.h>
+#include <irssi/src/core/channels.h>
+#include <irssi/src/core/servers-setup.h>
 
-#include "special-vars.h"
-#include "fe-core-commands.h"
-#include "fe-queries.h"
+#include <irssi/src/core/special-vars.h>
+#include <irssi/src/fe-common/core/fe-core-commands.h>
+#include <irssi/src/fe-common/core/fe-queries.h>
 #ifdef HAVE_CAPSICUM
-#include "fe-capsicum.h"
+#include <irssi/src/fe-common/core/fe-capsicum.h>
 #endif
-#include "hilight-text.h"
-#include "command-history.h"
-#include "completion.h"
-#include "keyboard.h"
-#include "printtext.h"
-#include "formats.h"
-#include "themes.h"
-#include "fe-channels.h"
-#include "fe-windows.h"
-#include "window-activity.h"
-#include "window-items.h"
-#include "windows-layout.h"
-#include "fe-recode.h"
+#include <irssi/src/fe-common/core/hilight-text.h>
+#include <irssi/src/fe-common/core/command-history.h>
+#include <irssi/src/fe-common/core/completion.h>
+#include <irssi/src/fe-common/core/keyboard.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/fe-common/core/formats.h>
+#include <irssi/src/fe-common/core/themes.h>
+#include <irssi/src/fe-common/core/fe-channels.h>
+#include <irssi/src/fe-common/core/fe-windows.h>
+#include <irssi/src/fe-common/core/window-activity.h>
+#include <irssi/src/fe-common/core/window-items.h>
+#include <irssi/src/fe-common/core/windows-layout.h>
+#include <irssi/src/fe-common/core/fe-recode.h>
 
 #include <signal.h>
 
@@ -482,12 +482,10 @@ gboolean strarray_find_dest(char **array, const TEXT_DEST_REC *dest)
 	g_return_val_if_fail(dest->window != NULL, FALSE);
 
 	if (dest->target == NULL)
-		return strarray_find(array, dest->window->name) != -1 ? TRUE : FALSE;
+		return dest->window->name != NULL &&
+			strarray_find(array, dest->window->name) != -1 ? TRUE : FALSE;
 
 	item = window_item_find_window(dest->window, dest->server, dest->target);
-	if (item == NULL) {
-		return FALSE;
-	}
 
 	server_tag_len = dest->server_tag != NULL ? strlen(dest->server_tag) : 0;
 	for (tmp = array; *tmp != NULL; tmp++) {
@@ -506,11 +504,11 @@ gboolean strarray_find_dest(char **array, const TEXT_DEST_REC *dest)
 			return TRUE;
 		} else if (g_ascii_strcasecmp(str, dest->target) == 0) {
 			return TRUE;
-		} else if (item->type == query_type &&
+		} else if (item != NULL && item->type == query_type &&
 		           g_strcmp0(str, dest->target[0] == '=' ? "::dccqueries" :
 			             "::queries") == 0) {
 			return TRUE;
-		} else if (item->type == channel_type &&
+		} else if (item != NULL && item->type == channel_type &&
 			   g_strcmp0(str, "::channels") == 0) {
 			return TRUE;
 		}

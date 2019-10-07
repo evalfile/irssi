@@ -18,17 +18,19 @@
     51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
 */
 
-#include "module.h"
-#include "modules-load.h"
-#include "module-formats.h"
-#include "levels.h"
-#include "themes.h"
-#include "core.h"
-#include "fe-common-core.h"
-#include "args.h"
-#include "printtext.h"
-#include "misc.h"
-#include "servers-setup.h"
+#include <irssi/src/irc/core/module.h>
+#include <irssi/src/core/modules-load.h>
+#include <irssi/src/fe-text/module-formats.h>
+#include <irssi/src/core/levels.h>
+#include <irssi/src/fe-common/core/themes.h>
+#include <irssi/src/core/core.h>
+#include <irssi/src/fe-common/core/fe-common-core.h>
+#include <irssi/src/core/args.h>
+#include <irssi/src/fe-common/core/printtext.h>
+#include <irssi/src/core/misc.h>
+#include <irssi/src/core/servers-setup.h>
+#include <irssi/src/core/rawlog.h>
+#include <irssi/src/core/net-sendbuffer.h>
 
 #include <stddef.h>
 #include <stdint.h>
@@ -36,9 +38,10 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "irc.h"
-#include "irc-servers.h"
-#include "irc-channels.h"
+#include <irssi/src/irc/core/irc.h>
+#include <irssi/src/irc/core/irc-servers.h>
+#include <irssi/src/irc/core/irc-channels.h>
+#include <irssi/src/fe-fuzz/null-logger.h>
 
 /* irc.c */
 void irc_init(void);
@@ -98,6 +101,7 @@ void event_connected(IRC_SERVER_REC *server, const char *data, const char *from)
 }
 
 void irc_server_init_bare_minimum(IRC_SERVER_REC *server) {
+	server->rawlog = rawlog_create();
 	server->isupport = g_hash_table_new((GHashFunc) g_istr_hash,
 					    (GCompareFunc) g_istr_equal);
 
@@ -110,12 +114,17 @@ void test_server() {
 	//SERVER_REC *server; /* = g_new0(IRC_SERVER_REC, 1); */
 	CHAT_PROTOCOL_REC *proto;
 	SERVER_CONNECT_REC *conn;
+	GIOChannel *handle = g_io_channel_unix_new(open("/dev/null", O_RDWR));
+	g_io_channel_set_encoding(handle, NULL, NULL);
+	g_io_channel_set_close_on_unref(handle, TRUE);
 
 	proto = chat_protocol_find("IRC");
 	conn = server_create_conn(proto->id, "localhost", 0, "", "", "user");
 	server = proto->server_init_connect(conn);
 	server->session_reconnect = TRUE;
+	g_free(server->tag);
 	server->tag = g_strdup("testserver");
+	server->handle = net_sendbuffer_create(handle, 0);
 
 	/* we skip some initialisations that would try to send data */
 	/* irc_servers_deinit(); */
@@ -135,6 +144,9 @@ void test_server() {
 }
 
 int LLVMFuzzerInitialize(int *argc, char ***argv) {
+#ifdef FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION
+	g_log_set_null_logger();
+#endif
 	core_register_options();
 	fe_common_core_register_options();
 	/* no args */
@@ -146,17 +158,23 @@ int LLVMFuzzerInitialize(int *argc, char ***argv) {
 	fe_common_irc_init();
 	signal_add("event 001", (SIGNAL_FUNC) event_connected);
 	module_register("core", "fe-fuzz");
+	rawlog_set_size(1);
 	return 0;
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
+	gboolean prefixedChoice = (gboolean)*data;
+	gchar *copy;
+	gchar **lines;
+	gchar **head;
+
 	if (size < 1) return 0;
 
 	test_server();
-	gboolean prefixedChoice = (gboolean)*data;
-	gchar *copy = g_strndup((const gchar *)data+1, size-1);
-	gchar **lines = g_strsplit(copy, "\r\n", -1);
-	gchar **head = lines;
+
+	copy = g_strndup((const gchar *)data+1, size-1);
+	lines = g_strsplit(copy, "\r\n", -1);
+	head = lines;
 
 	for (; *lines != NULL; lines++) {
 		gchar *prefixedLine;
@@ -171,6 +189,6 @@ int LLVMFuzzerTestOneInput(const uint8_t* data, size_t size) {
 
 	g_strfreev(head);
 	g_free(copy);
-	server_unref(server);
+	server_disconnect(server);
 	return 0;
 }
