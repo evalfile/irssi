@@ -156,6 +156,7 @@ static void server_connect_callback_init(SERVER_REC *server, GIOChannel *handle)
 	error = net_geterror(handle);
 	if (error != 0) {
 		server->connection_lost = TRUE;
+		server->connrec->last_failed_family = server->connrec->chosen_family;
 		server_connect_failed(server, g_strerror(error));
 		return;
 	}
@@ -176,6 +177,7 @@ static void server_connect_callback_init_ssl(SERVER_REC *server, GIOChannel *han
 	error = irssi_ssl_handshake(handle);
 	if (error == -1) {
 		server->connection_lost = TRUE;
+		server->connrec->last_failed_family = server->connrec->chosen_family;
 		server_connect_failed(server, NULL);
 		return;
 	}
@@ -216,6 +218,7 @@ static void server_real_connect(SERVER_REC *server, IPADDR *ip,
 		return;
 
 	if (ip != NULL) {
+		server->connrec->chosen_family = ip->family;
 		own_ip = IPADDR_IS_V6(ip) ? server->connrec->own_ip6 : server->connrec->own_ip4;
 		port = server->connrec->proxy != NULL ?
 			server->connrec->proxy_port : server->connrec->port;
@@ -241,9 +244,11 @@ static void server_real_connect(SERVER_REC *server, IPADDR *ip,
 			server->no_reconnect = TRUE;
 
 		server->connection_lost = TRUE;
+		server->connrec->last_failed_family = ip->family;
 		server_connect_failed(server, errmsg2 ? errmsg2 : errmsg);
 		g_free(errmsg2);
 	} else {
+		server->connrec->last_failed_family = 0;
 		server->handle = net_sendbuffer_create(handle, 0);
 		if (server->connrec->use_tls)
 			server_connect_callback_init_ssl(server, handle);
@@ -261,7 +266,6 @@ static void server_connect_callback_readpipe(SERVER_REC *server)
 	RESOLVED_IP_REC iprec;
         IPADDR *ip;
 	const char *errormsg;
-	char *servername = NULL;
 
 	g_source_remove(server->connect_tag);
 	server->connect_tag = -1;
@@ -283,31 +287,27 @@ static void server_connect_callback_readpipe(SERVER_REC *server)
 	} else if (server->connrec->family == AF_INET) {
 		/* force IPv4 connection */
 		ip = iprec.ip4.family == 0 ? NULL : &iprec.ip4;
-		servername = iprec.host4;
 	} else if (server->connrec->family == AF_INET6) {
 		/* force IPv6 connection */
 		ip = iprec.ip6.family == 0 ? NULL : &iprec.ip6;
-		servername = iprec.host6;
 	} else {
-		/* pick the one that was found, or if both do it like
-		   /SET resolve_prefer_ipv6 says. */
+		/* pick the one that was found. if both were found:
+		   1. disprefer the last one that failed
+		   2. prefer ipv4 over ipv6 unless resolve_prefer_ipv6 is set
+		*/
 		if (iprec.ip4.family == 0 ||
 		    (iprec.ip6.family != 0 &&
-		     settings_get_bool("resolve_prefer_ipv6"))) {
+		     (server->connrec->last_failed_family == AF_INET ||
+		      (settings_get_bool("resolve_prefer_ipv6") &&
+		       server->connrec->last_failed_family != AF_INET6)))) {
 			ip = &iprec.ip6;
-			servername = iprec.host6;
 		} else {
 			ip = &iprec.ip4;
-			servername = iprec.host4;
 		}
 	}
 
 	if (ip != NULL) {
 		/* host lookup ok */
-		if (servername) {
-			g_free(server->connrec->address);
-			server->connrec->address = g_strdup(servername);
-		}
 		server_real_connect(server, ip, NULL);
 		errormsg = NULL;
 	} else {
@@ -333,8 +333,6 @@ static void server_connect_callback_readpipe(SERVER_REC *server)
 	}
 
 	g_free(iprec.errorstr);
-	g_free(iprec.host4);
-	g_free(iprec.host6);
 }
 
 SERVER_REC *server_connect(SERVER_CONNECT_REC *conn)
@@ -418,8 +416,7 @@ int server_start_connect(SERVER_REC *server)
 			server->connrec->proxy : server->connrec->address;
 		server->connect_pid =
 			net_gethostbyname_nonblock(connect_address,
-						   server->connect_pipe[1],
-						   settings_get_bool("resolve_reverse_lookup"));
+						   server->connect_pipe[1], 0);
 		server->connect_tag =
 			g_input_add(server->connect_pipe[0], G_INPUT_READ,
 				    (GInputFunction)
@@ -739,7 +736,6 @@ static void sig_chat_protocol_deinit(CHAT_PROTOCOL_REC *proto)
 void servers_init(void)
 {
 	settings_add_bool("server", "resolve_prefer_ipv6", FALSE);
-	settings_add_bool("server", "resolve_reverse_lookup", FALSE);
 	lookup_servers = servers = NULL;
 
 	signal_add("chat protocol deinit", (SIGNAL_FUNC) sig_chat_protocol_deinit);
